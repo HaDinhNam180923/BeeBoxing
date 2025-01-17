@@ -219,13 +219,14 @@ export default function CartDrawer({ isOpen, onClose }) {
                 </div>
 
                 {selectedItems.size > 0 ? (
+                 
                   <button
-                    onClick={() => {
-                      alert(`Sẵn sàng thanh toán ${selectedItems.size} sản phẩm`);
-                    }}
-                    className="w-full py-3 text-center rounded-lg bg-blue-500 text-white hover:bg-blue-600"
+                      onClick={() => {
+                          window.location.href = `/checkout?items=${Array.from(selectedItems).join(',')}`;
+                      }}
+                      className="w-full py-3 text-center rounded-lg bg-blue-500 text-white hover:bg-blue-600"
                   >
-                    Thanh toán ({selectedItems.size} sản phẩm)
+                      Thanh toán ({selectedItems.size} sản phẩm)
                   </button>
                 ) : (
                   <button

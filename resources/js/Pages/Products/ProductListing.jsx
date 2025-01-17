@@ -137,7 +137,7 @@ const ProductListing = () => {
           <div className="md:col-span-2">
             <PriceRangeFilter 
               initialMin={Number(filters.price_from) || 0}
-              initialMax={Number(filters.price_to) || 1000000}
+              initialMax={Number(filters.price_to) || 10000000}
               onPriceChange={handlePriceRangeChange}
             />
           </div>

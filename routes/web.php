@@ -6,6 +6,9 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use App\Http\Controllers\API\CartController;
 use App\Http\Controllers\API\AddressController;
+use App\Http\Controllers\API\OrderController;
+use App\Http\Controllers\API\VoucherController;
+use Illuminate\Http\Request;
 
 Route::get('products/{id}', function ($id) {
     return Inertia::render('Products/Detail', [
@@ -51,6 +54,26 @@ Route::middleware('auth')->group(function () {
     Route::get('/api/cart', [CartController::class, 'getCart']);
     Route::put('/api/cart/quantity', [CartController::class, 'updateQuantity']);
     Route::delete('/api/cart/item', [CartController::class, 'removeItem']);
+});
+Route::middleware('auth')->group(function () {
+    Route::get('/checkout', function (Request $request) {
+        return Inertia::render('Checkout/Index', [
+            'selectedItems' => array_map('intval', explode(',', $request->query('items', '')))
+        ]);
+    })->name('checkout');
+
+    // API routes
+    Route::post('/api/orders', [OrderController::class, 'placeOrder']);
+    Route::get('/api/cart/selected-items', [CartController::class, 'getSelectedItems']);
+    Route::get('/api/vouchers/available', [VoucherController::class, 'getAvailableVouchers']);
+});
+
+Route::middleware('auth')->group(function () {
+    Route::get('/checkout', function (Request $request) {
+        return Inertia::render('Checkout/Index', [
+            'selectedItems' => array_map('intval', explode(',', $request->query('items', '')))
+        ]);
+    })->name('checkout');
 });
 
 require __DIR__ . '/auth.php';

@@ -237,4 +237,118 @@ class CartController extends Controller
             ], 500);
         }
     }
+    public function getCartItem($cartItemId)
+    {
+        try {
+            $userId = Auth::check() ? Auth::id() : null;
+
+            $cartItem = CartItem::where('cart_item_id', $cartItemId)
+                ->whereHas('cart', function ($query) use ($userId) {
+                    $query->where('user_id', $userId);
+                })
+                ->with(['inventory.color.product' => function ($query) {
+                    $query->with(['category', 'colors' => function ($q) {
+                        $q->with(['images' => function ($q) {
+                            $q->where('is_primary', true);
+                        }]);
+                    }]);
+                }])
+                ->first();
+
+            if (!$cartItem) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Cart item not found'
+                ], 404);
+            }
+
+            $product = $cartItem->inventory->color->product;
+            $basePrice = $product->base_price * (1 - ($product->discount / 100));
+            $priceAdjustment = $cartItem->inventory->price_adjustment;
+            $finalPrice = $basePrice * (1 + ($priceAdjustment / 100));
+
+            $cartItemData = [
+                'cart_item_id' => $cartItem->cart_item_id,
+                'product_id' => $product->product_id,
+                'product_name' => $product->name,
+                'color_name' => $cartItem->inventory->color->color_name,
+                'size' => $cartItem->inventory->size,
+                'quantity' => $cartItem->quantity,
+                'stock_quantity' => $cartItem->inventory->stock_quantity,
+                'unit_price' => round($finalPrice),
+                'subtotal' => round($finalPrice * $cartItem->quantity),
+                'image_url' => $product->colors->first(function ($color) {
+                    return $color->images->contains('is_primary', true);
+                })->images->firstWhere('is_primary', true)->image_url ?? null
+            ];
+
+            return response()->json([
+                'status' => true,
+                'data' => $cartItemData
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error getting cart item: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Error getting cart item',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function getSelectedItems(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'selected_items' => 'required|array',
+                'selected_items.*' => 'exists:cart_items,cart_item_id'
+            ]);
+
+            $userId = Auth::id();
+            $cartItems = CartItem::whereIn('cart_item_id', $validated['selected_items'])
+                ->whereHas('cart', function ($query) use ($userId) {
+                    $query->where('user_id', $userId);
+                })
+                ->with(['inventory.color.product' => function ($query) {
+                    $query->with(['category', 'colors.images' => function ($q) {
+                        $q->where('is_primary', true);
+                    }]);
+                }])
+                ->get();
+
+            $items = $cartItems->map(function ($item) {
+                $product = $item->inventory->color->product;
+                $basePrice = $product->base_price * (1 - ($product->discount / 100));
+                $finalPrice = $basePrice * (1 + ($item->inventory->price_adjustment / 100));
+
+                return [
+                    'cart_item_id' => $item->cart_item_id,
+                    'product_id' => $product->product_id,
+                    'product_name' => $product->name,
+                    'color_name' => $item->inventory->color->color_name,
+                    'size' => $item->inventory->size,
+                    'quantity' => $item->quantity,
+                    'unit_price' => round($finalPrice),
+                    'subtotal' => round($finalPrice * $item->quantity),
+                    'image_url' => $product->colors->first()->images->first()->image_url ?? null
+                ];
+            });
+
+            $total = $items->sum('subtotal');
+
+            return response()->json([
+                'status' => true,
+                'data' => [
+                    'items' => $items,
+                    'total' => $total
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Error getting selected items',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }
