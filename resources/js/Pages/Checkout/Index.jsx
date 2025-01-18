@@ -7,10 +7,13 @@ import Modal from '@/Components/Modal';
 export default function Checkout({ selectedItems }) {
     const [addresses, setAddresses] = useState([]);
     const [vouchers, setVouchers] = useState([]);
+    const [paymentMethod, setPaymentMethod] = useState('COD');
     const [selectedAddress, setSelectedAddress] = useState(null);
+    const [orderNote, setOrderNote] = useState('');
     const [selectedVoucher, setSelectedVoucher] = useState(null);
     const [showAddressModal, setShowAddressModal] = useState(false);
     const [showVoucherModal, setShowVoucherModal] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
     const [orderItems, setOrderItems] = useState([]);
     const [orderSummary, setOrderSummary] = useState({
         subtotal: 0,
@@ -86,6 +89,8 @@ export default function Checkout({ selectedItems }) {
         });
     };
 
+    
+
     const handlePlaceOrder = async () => {
         if (!selectedAddress) {
             alert('Vui lòng chọn địa chỉ giao hàng');
@@ -93,21 +98,31 @@ export default function Checkout({ selectedItems }) {
         }
     
         try {
+            setIsProcessing(true);
             const response = await axios.post('/api/orders', {
                 address_id: selectedAddress.address_id,
-                voucher_code: selectedVoucher?.code,
-                payment_method: 'COD',
-                selected_items: Array.from(selectedItems) // Chuyển đổi Set thành Array
+                payment_method: paymentMethod,
+                selected_items: Array.from(selectedItems),
+                note: orderNote || ''
             });
     
             if (response.data.status) {
-                window.location.href = '/dashboard';
+                if (paymentMethod === 'VNPAY') {
+                    // Chuyển trực tiếp đến URL được trả về từ server
+                    window.location.href = response.data.data.redirect_url;
+                } else {
+                    window.location.href = '/dashboard';
+                }
             }
         } catch (error) {
+            console.error('Lỗi đặt hàng:', error);
+            console.error('Chi tiết phản hồi:', error.response?.data);
             alert(error.response?.data?.message || 'Có lỗi xảy ra khi đặt hàng');
+        } finally {
+            setIsProcessing(false);
         }
     };
-
+    
     return (
         <MainLayout title="Thanh toán">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -212,8 +227,65 @@ export default function Checkout({ selectedItems }) {
                             onClick={handlePlaceOrder}
                             className="w-full mt-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                         >
-                            Đặt hàng
+                            {paymentMethod === 'COD' ? 'Đặt hàng' : 'Thanh toán với VNPAY'}
                         </button>
+                        {/* Ghi chú đơn hàng */}
+                        <div className="border-t pt-4 mt-4">
+                            <h3 className="font-medium mb-3">Ghi chú đơn hàng</h3>
+                            <textarea
+                                value={orderNote}
+                                onChange={(e) => setOrderNote(e.target.value)}
+                                placeholder="Nhập ghi chú cho đơn hàng (không bắt buộc)"
+                                className="w-full p-3 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                rows="3"
+                            />
+                        </div>
+                        {/* Phương thức thanh toán */}
+                        <div className="border-t pt-4 mt-4">
+                            <h3 className="font-medium mb-3">Phương thức thanh toán</h3>
+                            <div className="space-y-3">
+                                <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                                    <input
+                                        type="radio"
+                                        name="payment_method"
+                                        value="COD"
+                                        checked={paymentMethod === 'COD'}
+                                        onChange={(e) => setPaymentMethod(e.target.value)}
+                                        className="mr-3"
+                                    />
+                                    <div>
+                                        <p className="font-medium">Thanh toán khi nhận hàng (COD)</p>
+                                        <p className="text-sm text-gray-500">
+                                            Thanh toán bằng tiền mặt khi nhận được hàng
+                                        </p>
+                                    </div>
+                                </label>
+
+                                <label className="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                                    <input
+                                        type="radio"
+                                        name="payment_method"
+                                        value="VNPAY"
+                                        checked={paymentMethod === 'VNPAY'}
+                                        onChange={(e) => setPaymentMethod(e.target.value)}
+                                        className="mr-3"
+                                    />
+                                    <div className="flex items-center justify-between flex-1">
+                                        <div>
+                                            <p className="font-medium">Thanh toán qua VNPAY-QR</p>
+                                            <p className="text-sm text-gray-500">
+                                                Quét mã QR để thanh toán qua ứng dụng ngân hàng
+                                            </p>
+                                        </div>
+                                        <img 
+                                            src="/storage/images/vnpay-logo.png" 
+                                            alt="VNPAY" 
+                                            className="h-8 w-auto object-contain ml-3"
+                                        />
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
