@@ -1,4 +1,4 @@
-import logoImage from './logo.png'
+import logoImage from './logo1.png'
 export default function ApplicationLogo(props) {
     return (
         // <svg

@@ -33,6 +33,11 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        // Check if the authenticated user has an admin role
+        if ($request->user() && $request->user()->role === 'admin') {
+            return redirect()->route('admin.products');
+        }
+
         return redirect()->intended(route('dashboard', absolute: false));
     }
 

@@ -53,4 +53,13 @@ class Product extends Model
     {
         return $this->base_price * (1 - $this->discount / 100);
     }
+    public function collections()
+    {
+        return $this->belongsToMany(
+            Collection::class,
+            'collection_product',
+            'product_id',
+            'collection_id'
+        )->withPivot('display_order');
+    }
 }

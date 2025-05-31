@@ -5,9 +5,12 @@ import MainLayout from '@/components/layouts/MainLayout';
 import ProductGallery from '@/components/products/ProductGallery';
 import ColorSelector from '@/components/products/ColorSelector';
 import SizeSelector from '@/components/products/SizeSelector';
-import axios from 'axios';
-import { usePage } from '@inertiajs/react'; 
+import { addToRecentlyViewed } from '@/components/products/recentlyViewedHelper';
 
+import axios from 'axios';
+import { usePage } from '@inertiajs/react';
+
+// Reusable component definitions
 const Card = ({ children, className = "" }) => (
   <div className={`bg-white rounded-lg shadow ${className}`}>
     {children}
@@ -57,6 +60,7 @@ const TabButton = ({ active, onClick, children }) => (
   </button>
 );
 
+// Loading, Error and No Data states
 const LoadingState = () => (
   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-pulse">
     <div className="aspect-square bg-gray-200 rounded-lg" />
@@ -85,6 +89,93 @@ const NoDataState = () => (
   </div>
 );
 
+// Review List Component
+const ReviewList = ({ productId }) => {
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  React.useEffect(() => {
+    const fetchReviews = async () => {
+      try {
+        const response = await axios.get(`/api/reviews/product/${productId}`);
+        setReviews(response.data.data);
+      } catch (error) {
+        console.error('Error fetching reviews:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (productId) {
+      addToRecentlyViewed(productId);
+    }
+
+    fetchReviews();
+  }, [productId]);
+
+  if (loading) {
+    return (
+      <div className="animate-pulse space-y-4">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="bg-gray-100 h-24 rounded-lg"/>
+        ))}
+      </div>
+    );
+  }
+
+  if (!reviews.length) {
+    return (
+      <p className="text-gray-500 text-center py-4">
+        Chưa có đánh giá nào cho sản phẩm này
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {reviews.map(review => (
+        <div key={review.review_id} className="bg-white p-4 rounded-lg shadow">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <p className="font-medium">{review.user.name}</p>
+              <div className="flex items-center">
+                {[...Array(5)].map((_, i) => (
+                  <svg
+                    key={i}
+                    className={`w-4 h-4 ${
+                      i < review.rating ? 'text-yellow-400' : 'text-gray-300'
+                    }`}
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                ))}
+              </div>
+            </div>
+            <span className="text-sm text-gray-500">
+              {new Date(review.created_at).toLocaleDateString()}
+            </span>
+          </div>
+          <p className="text-gray-600">{review.comment}</p>
+          {review.image_urls?.length > 0 && (
+            <div className="mt-2">
+              {review.image_urls.map((url, index) => (
+                <img
+                  key={index}
+                  src={url}
+                  alt={`Review image ${index + 1}`}
+                  className="h-20 w-20 object-cover rounded-lg inline-block mr-2"
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Main Detail Component
 const Detail = ({ id }) => {
   const { auth, csrf_token } = usePage().props;
   const { data: response, isLoading, error } = useQuery({
@@ -116,27 +207,27 @@ const Detail = ({ id }) => {
 
     const handleAddToCart = async () => {
       if (!currentInventory || currentInventory.stock_quantity === 0) return;
-  
+
       if (!auth.user) {
         alert('Vui lòng đăng nhập để thêm vào giỏ hàng');
         window.location.href = '/login';
         return;
       }
-  
+
       try {
         setIsAddingToCart(true);
-        const response = await axios.post('/api/cart/add', {
+        await axios.post('/api/cart/add', {
           inventory_id: currentInventory.inventory_id,
           quantity: quantity
         }, {
           headers: {
-            'X-CSRF-TOKEN': csrf_token, // Sử dụng token đã lấy từ props
+            'X-CSRF-TOKEN': csrf_token,
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
           withCredentials: true
         });
-  
+
         alert('Sản phẩm đã được thêm vào giỏ hàng');
       } catch (error) {
         console.error('Lỗi thêm vào giỏ:', error.response?.data || error);
@@ -177,136 +268,153 @@ const Detail = ({ id }) => {
     );
 
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <ProductGallery color={selectedColor} />
+      <div className="space-y-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Left column - Product Gallery */}
+          <ProductGallery color={selectedColor} />
 
-        <div className="space-y-6">
-          <div>
-            <Badge variant="secondary" className="mb-2">
-              {product.category.name}
-            </Badge>
-            <h1 className="text-3xl font-bold">{product.name}</h1>
-            
-            <div className="mt-4 flex items-center gap-2">
-              <span className="text-2xl font-bold">
-                {Math.round(finalPrice).toLocaleString('vi-VN')}đ
-              </span>
-              {product.discount > 0 && (
+          {/* Right column - Product Info */}
+          <div className="space-y-6">
+            {/* Product basic info */}
+            <div>
+              <Badge variant="secondary" className="mb-2">
+                {product.category.name}
+              </Badge>
+              <h1 className="text-3xl font-bold">{product.name}</h1>
+              
+              <div className="mt-4 flex items-center gap-2">
+                <span className="text-2xl font-bold">
+                  {Math.round(finalPrice).toLocaleString('vi-VN')}đ
+                </span>
+                {product.discount > 0 && (
+                  <>
+                    <span className="text-gray-500 line-through">
+                      {Number(product.base_price).toLocaleString('vi-VN')}đ
+                    </span>
+                    <Badge variant="destructive">
+                      -{product.discount}%
+                    </Badge>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Product options */}
+            <ColorSelector
+              colors={product.colors}
+              selectedColor={selectedColor}
+              onColorChange={color => {
+                setSelectedColor(color);
+                setSelectedSize(color.inventory[0]?.size);
+                setQuantity(1);
+              }}
+            />
+
+            <SizeSelector
+              inventory={selectedColor.inventory}
+              selectedSize={selectedSize}
+              onSizeChange={(size) => {
+                setSelectedSize(size);
+                setQuantity(1);
+              }}
+            />
+
+            <div>
+              {currentInventory && (
                 <>
-                  <span className="text-gray-500 line-through">
-                    {Number(product.base_price).toLocaleString('vi-VN')}đ
-                  </span>
-                  <Badge variant="destructive">
-                    -{product.discount}%
-                  </Badge>
+                  {currentInventory.stock_quantity > 0 ? (
+                    <Badge variant="success">
+                      Còn hàng: {currentInventory.stock_quantity} sản phẩm
+                    </Badge>
+                  ) : (
+                    <Badge variant="destructive">
+                      Hết hàng
+                    </Badge>
+                  )}
                 </>
               )}
             </div>
-          </div>
 
-          <ColorSelector
-            colors={product.colors}
-            selectedColor={selectedColor}
-            onColorChange={color => {
-              setSelectedColor(color);
-              setSelectedSize(color.inventory[0]?.size);
-              setQuantity(1); // Reset quantity when color changes
-            }}
-          />
+            <QuantitySelector />
 
-          <SizeSelector
-            inventory={selectedColor.inventory}
-            selectedSize={selectedSize}
-            onSizeChange={(size) => {
-              setSelectedSize(size);
-              setQuantity(1); // Reset quantity when size changes
-            }}
-          />
-
-          <div>
-            {currentInventory && (
-              <>
-                {currentInventory.stock_quantity > 0 ? (
-                  <Badge variant="success">
-                    Còn hàng: {currentInventory.stock_quantity} sản phẩm
-                  </Badge>
-                ) : (
-                  <Badge variant="destructive">
-                    Hết hàng
-                  </Badge>
-                )}
-              </>
-            )}
-          </div>
-
-          <QuantitySelector />
-
-          <Card>
-            <div className="border-b border-gray-200">
-              <div className="flex">
-                <TabButton 
-                  active={activeTab === 'description'} 
-                  onClick={() => setActiveTab('description')}
-                >
-                  Mô tả sản phẩm
-                </TabButton>
-                <TabButton 
-                  active={activeTab === 'specifications'} 
-                  onClick={() => setActiveTab('specifications')}
-                >
-                  Thông số kỹ thuật
-                </TabButton>
-              </div>
-            </div>
-            <CardContent>
-              {activeTab === 'description' ? (
-                <p className="text-gray-600">{product.description}</p>
+            <Button 
+              className="w-full relative"
+              disabled={!currentInventory || currentInventory.stock_quantity === 0 || isAddingToCart}
+              onClick={handleAddToCart}
+            >
+              {isAddingToCart ? (
+                <>
+                  <span className="opacity-0">Thêm vào giỏ hàng</span>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                </>
               ) : (
-                <dl className="divide-y divide-gray-200">
-                  {product.specifications && (() => {
-                    try {
-                      const specs = typeof product.specifications === 'string' 
-                        ? JSON.parse(product.specifications) 
-                        : product.specifications;
-                      
-                      return Object.entries(specs || {}).map(([key, value]) => (
-                        <div key={key} className="py-2 flex justify-between">
-                          <dt className="font-medium text-gray-500 capitalize">{key}</dt>
-                          <dd className="text-gray-900">{value}</dd>
-                        </div>
-                      ));
-                    } catch (error) {
-                      console.error('Lỗi parse thông số:', error);
-                      return null;
-                    }
-                  })()}
-                </dl>
+                'Thêm vào giỏ hàng'
               )}
+            </Button>
+
+            {currentInventory?.stock_quantity === 0 && (
+              <p className="text-red-500 text-sm text-center">
+                Sản phẩm đã hết hàng
+              </p>
+            )}
+
+            {/* Product details tabs */}
+            <Card>
+              <div className="border-b border-gray-200">
+                <div className="flex">
+                  <TabButton 
+                    active={activeTab === 'description'} 
+                    onClick={() => setActiveTab('description')}
+                  >
+                    Mô tả sản phẩm
+                  </TabButton>
+                  <TabButton 
+                    active={activeTab === 'specifications'} 
+                    onClick={() => setActiveTab('specifications')}
+                  >
+                    Thông số kỹ thuật
+                  </TabButton>
+                </div>
+              </div>
+              <CardContent>
+                {activeTab === 'description' ? (
+                  <p className="text-gray-600">{product.description}</p>
+                ) : (
+                  <dl className="divide-y divide-gray-200">
+                    {product.specifications && (() => {
+                      try {
+                        const specs = typeof product.specifications === 'string' 
+                          ? JSON.parse(product.specifications) 
+                          : product.specifications;
+                        
+                        return Object.entries(specs || {}).map(([key, value]) => (
+                          <div key={key} className="py-2 flex justify-between">
+                            <dt className="font-medium text-gray-500 capitalize">{key}</dt>
+                            <dd className="text-gray-900">{value}</dd>
+                          </div>
+                        ));
+                      } catch (error) {
+                        console.error('Lỗi parse thông số:', error);
+                        return null;
+                      }
+                    })()}
+                  </dl>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Reviews Section */}
+        <div className="space-y-4">
+          <h2 className="text-2xl font-bold">Đánh giá từ khách hàng</h2>
+          <Card>
+            <CardContent>
+              <ReviewList productId={product.product_id} />
             </CardContent>
           </Card>
-
-          <Button 
-            className="w-full relative"
-            disabled={!currentInventory || currentInventory.stock_quantity === 0 || isAddingToCart}
-            onClick={handleAddToCart}
-          >
-            {isAddingToCart ? (
-              <>
-                <span className="opacity-0">Thêm vào giỏ hàng</span>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              </>
-            ) : (
-              'Thêm vào giỏ hàng'
-            )}
-          </Button>
-
-          {currentInventory?.stock_quantity === 0 && (
-            <p className="text-red-500 text-sm text-center">
-              Sản phẩm đã hết hàng
-            </p>
-          )}
         </div>
       </div>
     );

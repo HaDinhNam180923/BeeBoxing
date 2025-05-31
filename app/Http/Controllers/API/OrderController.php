@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderDetail;
 use App\Models\Cart;
+use App\Models\Review;
 use App\Models\CartItem;
 use App\Models\Voucher;
 use App\Services\VNPayService;
@@ -250,5 +251,176 @@ class OrderController extends Controller
         }
 
         return redirect()->route('payment.failed')->with('error', 'Dữ liệu không hợp lệ');
+    }
+
+    // In OrderController.php, add these methods
+    public function getOrderHistory()
+    {
+        try {
+            $userId = Auth::id();
+            $orders = Order::where('user_id', $userId)
+                ->with(['orderDetails.inventory.color.product', 'address'])
+                ->orderBy('order_date', 'desc')
+                ->get()
+                ->map(function ($order) {
+                    // Transform order data for frontend
+                    return [
+                        'order_id' => $order->order_id,
+                        'tracking_number' => $order->tracking_number,
+                        'order_date' => $order->order_date->format('Y-m-d H:i:s'),
+                        'final_amount' => $order->final_amount,
+                        'order_status' => $order->order_status,
+                        'payment_status' => $order->payment_status,
+                        'total_items' => $order->orderDetails->sum('quantity'),
+                        'first_product_image' => $order->orderDetails->first()->inventory->color->product->colors->first()->images->first()->image_url ?? null
+                    ];
+                });
+
+            return response()->json([
+                'status' => true,
+                'data' => $orders
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Error retrieving order history',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Trong OrderController.php
+    public function getOrderDetail($orderId)
+    {
+        try {
+            $order = Order::where('user_id', Auth::id())
+                ->where('order_id', $orderId)
+                ->with([
+                    'orderDetails.inventory.color.product', // đã có relation này
+                    'address',
+                    'voucher'
+                ])
+                ->firstOrFail();
+
+            // Transform order details
+            $orderDetails = $order->orderDetails->map(function ($detail) {
+                $product = $detail->inventory->color->product;
+                $color = $detail->inventory->color;
+
+                return [
+                    'order_detail_id' => $detail->order_detail_id,
+                    'product_id' => $product->product_id, // Thêm product_id vào đây
+                    'product_name' => $product->name,
+                    'color_name' => $color->color_name,
+                    'size' => $detail->inventory->size,
+                    'quantity' => $detail->quantity,
+                    'unit_price' => $detail->unit_price,
+                    'subtotal' => $detail->subtotal,
+                    'image_url' => $color->images->first()->image_url ?? null
+                ];
+            });
+
+            return response()->json([
+                'status' => true,
+                'data' => [
+                    'order' => [
+                        'order_id' => $order->order_id,
+                        'tracking_number' => $order->tracking_number,
+                        'order_date' => $order->order_date->format('Y-m-d H:i:s'),
+                        'subtotal_amount' => $order->subtotal_amount,
+                        'shipping_fee' => $order->shipping_fee,
+                        'discount_amount' => $order->discount_amount,
+                        'final_amount' => $order->final_amount,
+                        'payment_method' => $order->payment_method,
+                        'payment_status' => $order->payment_status,
+                        'order_status' => $order->order_status,
+                        'note' => $order->note,
+                        'address' => $order->address,
+                        'voucher' => $order->voucher
+                    ],
+                    'order_details' => $orderDetails
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Error retrieving order detail',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    // Thêm vào OrderController.php
+
+    public function cancelOrder($orderId)
+    {
+        try {
+            $order = Order::where('order_id', $orderId)
+                ->where('user_id', Auth::id())
+                ->whereIn('order_status', ['PENDING', 'CONFIRMED'])
+                ->first();
+
+            if (!$order) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Order not found or cannot be cancelled'
+                ], 404);
+            }
+
+            $order->update([
+                'order_status' => 'CANCELLED'
+            ]);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Order cancelled successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Error cancelling order',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+    public function confirmDelivery($orderId)
+    {
+        try {
+            DB::beginTransaction();
+
+            $order = Order::where('order_id', $orderId)
+                ->where('user_id', Auth::id())
+                ->where('order_status', 'DELIVERING')
+                ->first();
+
+            if (!$order) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Order not found or cannot be confirmed'
+                ], 404);
+            }
+
+            $order->update([
+                'order_status' => 'COMPLETED',
+                'payment_status' => $order->payment_method === 'COD' ? 'PAID' : $order->payment_status
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Delivery confirmed successfully'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error confirming delivery: ' . $e->getMessage());
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Error confirming delivery',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }

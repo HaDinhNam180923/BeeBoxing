@@ -7,10 +7,12 @@ use Inertia\Inertia;
 use App\Http\Controllers\API\CartController;
 use App\Http\Controllers\API\AddressController;
 use App\Http\Controllers\API\OrderController;
-use App\Http\Controllers\API\VoucherController;
+// use App\Http\Controllers\API\VoucherController;
+use App\Http\Controllers\Admin\VoucherController;
 use Illuminate\Http\Request;
 use App\Models\Order;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Controllers\API\ReviewController;
 
 // Public routes
 Route::get('/', function () {
@@ -104,9 +106,132 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Order routes
     Route::post('/api/orders', [OrderController::class, 'placeOrder']);
-
     // Voucher routes
     Route::get('/api/vouchers/available', [VoucherController::class, 'getAvailableVouchers']);
+});
+
+Route::middleware('auth')->prefix('admin')->group(function () {
+    Route::get('/products', function () {
+        return Inertia::render('Admin/Products/Index');
+    })->name('admin.products');
+
+    Route::get('/products/create', function () {
+        return Inertia::render('Admin/Products/Create');
+    })->name('admin.products.create');
+    // Thêm route mới cho trang edit
+    Route::get('/products/{id}/edit', function ($id) {
+        return Inertia::render('Admin/Products/Edit', [
+            'productId' => $id
+        ]);
+    })->name('admin.products.edit');
+    // Thêm vào nhóm route middleware('auth')->prefix('admin') trong file web.php
+
+    // Route cho danh mục
+    Route::get('/categories', function () {
+        return Inertia::render('Admin/Categories/Index');
+    })->name('admin.categories');
+
+    Route::get('/categories/create', function () {
+        return Inertia::render('Admin/Categories/Create');
+    })->name('admin.categories.create');
+
+    Route::get('/categories/{id}/edit', function ($id) {
+        return Inertia::render('Admin/Categories/Edit', [
+            'categoryId' => $id
+        ]);
+    })->name('admin.categories.edit');
+
+    // Route cho voucher
+    Route::get('/vouchers', function () {
+        return Inertia::render('Admin/Vouchers/Index');
+    })->name('admin.vouchers');
+
+    Route::get('/vouchers/create', function () {
+        return Inertia::render('Admin/Vouchers/Create');
+    })->name('admin.vouchers.create');
+
+    Route::get('/vouchers/{id}/edit', function ($id) {
+        return Inertia::render('Admin/Vouchers/Edit', [
+            'voucherId' => $id
+        ]);
+    })->name('admin.vouchers.edit');
+});
+Route::middleware(['auth'])->group(function () {
+    // Add inside the authenticated routes group
+    Route::get('/api/orders', [OrderController::class, 'getOrderHistory']);
+    Route::get('/api/orders/{id}', [OrderController::class, 'getOrderDetail']);
+    Route::post('/api/orders/{id}/cancel', [OrderController::class, 'cancelOrder']);
+    Route::post('/api/orders/{id}/confirm-delivery', [OrderController::class, 'confirmDelivery']);
+    Route::get('/orders', function () {
+        return Inertia::render('Orders/Index');
+    })->name('orders.index');
+
+    Route::get('/orders/{id}', function ($id) {
+        return Inertia::render('Orders/Detail', [
+            'orderId' => $id
+        ]);
+    })->name('orders.detail');
+});
+
+// Thêm vào trong nhóm route có middleware auth
+Route::middleware(['auth'])->group(function () {
+    // Review routes
+    Route::prefix('api/reviews')->group(function () {
+        Route::post('/', [ReviewController::class, 'store']);
+        Route::get('/user', [ReviewController::class, 'getUserReviews']);
+        Route::get('/product/{productId}', [ReviewController::class, 'getProductReviews']);
+        Route::put('/{reviewId}', [ReviewController::class, 'update']);
+        Route::delete('/{reviewId}', [ReviewController::class, 'destroy']);
+    });
+});
+
+Route::middleware('auth')->prefix('admin')->group(function () {
+    // Các route hiện có
+
+    // Route cho quản lý đơn hàng
+    Route::get('/orders', function () {
+        return Inertia::render('Admin/Orders/Index');
+    })->name('admin.orders');
+
+    Route::get('/orders/{id}', function ($id) {
+        return Inertia::render('Admin/Orders/Detail', [
+            'orderId' => $id
+        ]);
+    })->name('admin.orders.detail');
+});
+// Trong file web.php, thêm routes cho admin orders
+Route::middleware('auth')->prefix('api')->group(function () {
+    Route::get('/admin/orders', [App\Http\Controllers\Admin\OrderManageController::class, 'index']);
+    Route::get('/admin/orders/{id}', [App\Http\Controllers\Admin\OrderManageController::class, 'show']);
+    Route::put('/admin/orders/{id}/status', [App\Http\Controllers\Admin\OrderManageController::class, 'updateStatus']);
+});
+
+// Frontend Collection routes
+Route::get('/collections', function () {
+    return Inertia::render('Collections/Index');
+})->name('collections.index');
+
+Route::get('/collections/{slug}', function ($slug) {
+    return Inertia::render('Collections/Detail', [
+        'slug' => $slug
+    ]);
+})->name('collections.detail');
+
+// Admin Collection routes
+Route::middleware('auth')->prefix('admin')->group(function () {
+    Route::get('/collections', function () {
+        return Inertia::render('Admin/Collections/Index');
+    })->name('admin.collections');
+
+    Route::get('/collections/create', function () {
+        return Inertia::render('Admin/Collections/Create');
+    })->name('admin.collections.create');
+
+    Route::get('/collections/{id}/edit', function ($id) {
+        return Inertia::render('Admin/Collections/Edit', [
+            'collectionId' => $id
+        ]);
+    })->name('admin.collections.edit');
 });
 
 require __DIR__ . '/auth.php';

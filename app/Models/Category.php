@@ -21,6 +21,16 @@ class Category extends Model
         'meta_description'
     ];
 
+    public function children()
+    {
+        return $this->hasMany(Category::class, 'parent_category_id', 'category_id');
+    }
+
+    // Quan hệ với danh mục cha
+    public function parent()
+    {
+        return $this->belongsTo(Category::class, 'parent_category_id', 'category_id');
+    }
     public function parentCategory()
     {
         return $this->belongsTo(Category::class, 'parent_category_id');

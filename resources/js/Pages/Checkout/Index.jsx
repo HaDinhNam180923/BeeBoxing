@@ -41,6 +41,10 @@ export default function Checkout({ selectedItems }) {
             console.error('Error fetching selected items:', error);
         }
     };
+    const isVoucherEligible = (voucher) => {
+        // Kiểm tra nếu tổng tiền đơn hàng đủ điều kiện áp dụng voucher
+        return orderSummary.subtotal >= voucher.minimum_order_amount;
+      };
 
     const fetchAddresses = async () => {
         try {
@@ -103,9 +107,11 @@ export default function Checkout({ selectedItems }) {
                 address_id: selectedAddress.address_id,
                 payment_method: paymentMethod,
                 selected_items: Array.from(selectedItems),
-                note: orderNote || ''
+                note: orderNote || '',
+                voucher_code: selectedVoucher?.code
             });
     
+            console.log('Order Payload:', response); 
             if (response.data.status) {
                 if (paymentMethod === 'VNPAY') {
                     // Chuyển trực tiếp đến URL được trả về từ server
@@ -337,19 +343,26 @@ export default function Checkout({ selectedItems }) {
                     {/* Scrollable voucher list */}
                     <div className="flex-1 overflow-y-auto min-h-0">
                         <div className="space-y-3">
-                            {vouchers.map(voucher => (
+                        {vouchers.map(voucher => {
+                            const isEligible = isVoucherEligible(voucher);
+                            return (
                                 <label
                                     key={voucher.voucher_id}
-                                    className="flex items-start space-x-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
+                                    className={`flex items-start space-x-3 p-3 border rounded-lg ${
+                                        isEligible ? 'cursor-pointer hover:bg-gray-50' : 'cursor-not-allowed opacity-70'
+                                    }`}
                                 >
                                     <input
                                         type="radio"
                                         name="voucher"
                                         checked={selectedVoucher?.voucher_id === voucher.voucher_id}
                                         onChange={() => {
-                                            setSelectedVoucher(voucher);
-                                            updateOrderSummary(orderItems, voucher);
+                                            if (isEligible) {
+                                                setSelectedVoucher(voucher);
+                                                updateOrderSummary(orderItems, voucher);
+                                            }
                                         }}
+                                        disabled={!isEligible}
                                         className="mt-1"
                                     />
                                     <div className="flex-1 min-w-0">
@@ -363,13 +376,17 @@ export default function Checkout({ selectedItems }) {
                                         </div>
                                         <p className="text-sm text-gray-500 line-clamp-2">{voucher.description}</p>
                                         <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-x-4">
-                                            <p>Đơn tối thiểu: {voucher.minimum_order_amount.toLocaleString('vi-VN')}đ</p>
+                                            <p className={!isEligible ? 'text-red-500 font-medium' : ''}>
+                                                Đơn tối thiểu: {voucher.minimum_order_amount.toLocaleString('vi-VN')}đ
+                                                {!isEligible && ' (Chưa đủ điều kiện)'}
+                                            </p>
                                             <p>Giảm tối đa: {voucher.maximum_discount_amount.toLocaleString('vi-VN')}đ</p>
-                                            <p>HSD: {voucher.expires_in}</p>
+                                            <p>HSD: {new Date(voucher.end_date).toLocaleDateString('vi-VN')}</p>
                                         </div>
                                     </div>
                                 </label>
-                            ))}
+                            );
+                        })}
                         </div>
                     </div>
 

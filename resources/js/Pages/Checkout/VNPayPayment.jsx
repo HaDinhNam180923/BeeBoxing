@@ -1,14 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import MainLayout from '@/components/layouts/MainLayout';
-import QRCode from 'qrcode.react';
 import { Link } from '@inertiajs/react';
+import QRCode from 'qrcode';
 
 export default function VNPayPayment({ paymentData, orderId }) {
     const [timeLeft, setTimeLeft] = useState(
         Math.floor((paymentData.expire_time - Date.now()) / 1000)
     );
+    const canvasRef = useRef(null);
 
     useEffect(() => {
+        // Tạo QR code
+        if (canvasRef.current) {
+            const fullPaymentUrl = `${paymentData.payment_url}?${new URLSearchParams(paymentData.data).toString()}&vnp_SecureHash=${paymentData.hash}`;
+            QRCode.toCanvas(canvasRef.current, fullPaymentUrl, {
+                width: 256,
+                errorCorrectionLevel: 'H'
+            }, function (error) {
+                if (error) console.error(error);
+            });
+        }
+
+        // Timer
         const timer = setInterval(() => {
             setTimeLeft(prevTime => {
                 if (prevTime <= 1) {
@@ -19,9 +32,8 @@ export default function VNPayPayment({ paymentData, orderId }) {
             });
         }, 1000);
 
-        // Dọn dẹp interval khi component bị hủy
         return () => clearInterval(timer);
-    }, []);
+    }, [paymentData]);
 
     // Tạo URL thanh toán hoàn chỉnh
     const fullPaymentUrl = `${paymentData.payment_url}?${new URLSearchParams(paymentData.data).toString()}&vnp_SecureHash=${paymentData.hash}`;
@@ -45,11 +57,7 @@ export default function VNPayPayment({ paymentData, orderId }) {
 
                     <div className="flex justify-center mb-6">
                         <div className="p-4 border-2 border-blue-500 rounded-lg">
-                            <QRCode
-                                value={fullPaymentUrl}
-                                size={256}
-                                level="H"
-                            />
+                            <canvas ref={canvasRef} width="256" height="256" />
                         </div>
                     </div>
 

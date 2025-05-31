@@ -26,7 +26,22 @@ class ProductSeeder extends Seeder
             'Đẳng cấp',
             'Limited',
             'Đặc biệt',
-            'Premium'
+            'Premium',
+            'Mới',
+            'Đổi mới',
+            'Cực chất',
+            'Cổ điển',
+            'Siêu nhẹ',
+            'Siêu bền',
+            'Tiện lợi',
+            'Phong cách',
+            'Độc đáo',
+            'Tinh tế',
+            'Xu hướng',
+            'Tối giản',
+            'Thịnh hành',
+            'Bền bỉ',
+            'Mạnh mẽ'
         ];
 
         $items = [
@@ -45,7 +60,21 @@ class ProductSeeder extends Seeder
             'Áo len',
             'Áo gió',
             'Áo bomber',
-            'Quần jogger'
+            'Quần jogger',
+            'Áo tanktop',
+            'Quần dài',
+            'Áo dạ',
+            'Áo cổ lọ',
+            'Bộ đồ thể thao',
+            'Set đồ nam',
+            'Set đồ nữ',
+            'Quần ống rộng',
+            'Quần kaki',
+            'Áo thun dài tay',
+            'Áo khoác len',
+            'Áo khoác dạ',
+            'Áo phông',
+            'Áo form rộng'
         ];
 
         $collections = [
@@ -64,13 +93,33 @@ class ProductSeeder extends Seeder
             'Classic',
             'Urban',
             'Signature',
-            'Limited'
+            'Limited',
+            'Freedom',
+            'Infinity',
+            'Edge',
+            'Zen',
+            'Boost',
+            'Bold',
+            'True Fit',
+            'Iconic',
+            'Motion',
+            'Performance',
+            'Chill',
+            'Vibe',
+            'Flex',
+            'Heritage',
+            'Core',
+            'Studio',
+            'Rush',
+            'Onyx',
+            'Glide'
         ];
 
         return $adjectives[array_rand($adjectives)] . ' ' .
             $items[array_rand($items)] . ' ' .
             $collections[array_rand($collections)];
     }
+
 
     private function roundPrice($price)
     {
@@ -106,7 +155,7 @@ class ProductSeeder extends Seeder
             'Fila'
         ];
 
-        for ($i = 1; $i <= 50; $i++) {
+        for ($i = 1; $i <= 500; $i++) {
             $basePrice = $this->roundPrice(rand(100000, 2000000));
             DB::table('products')->insert([
                 'product_id' => $i,
