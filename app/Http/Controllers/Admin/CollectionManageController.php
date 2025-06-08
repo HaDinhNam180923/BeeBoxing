@@ -12,26 +12,31 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-class CollectionController extends Controller
+class CollectionManageController extends Controller
 {
-    /**
-     * Hiển thị danh sách bộ sưu tập
-     */
     public function index(Request $request)
     {
         try {
-            $query = Collection::query();
+            $query = Collection::with(['products' => function ($query) {
+                $query->select('products.product_id', 'name', 'base_price', 'discount')
+                    ->where('is_active', true);
+            }])->withCount('products');
 
-            if ($request->has('search')) {
+            if ($request->filled('search')) {
                 $search = $request->search;
                 $query->where('name', 'like', "%{$search}%");
             }
 
-            if ($request->has('status')) {
+            if ($request->has('status') && in_array($request->status, ['true', 'false'])) {
                 $query->where('is_active', $request->boolean('status'));
             }
 
             $collections = $query->orderBy('display_order')->get();
+
+            Log::info('Collections fetched', [
+                'count' => $collections->count(),
+                'request' => $request->all()
+            ]);
 
             return response()->json([
                 'status' => true,
@@ -47,13 +52,17 @@ class CollectionController extends Controller
         }
     }
 
-    /**
-     * Lấy chi tiết bộ sưu tập
-     */
     public function show($id)
     {
         try {
-            $collection = Collection::with('products')->findOrFail($id);
+            $collection = Collection::with(['products' => function ($query) {
+                $query->where('is_active', true)
+                    ->with(['colors' => function ($q) {
+                        $q->with(['images' => function ($q) {
+                            $q->where('is_primary', true);
+                        }]);
+                    }]);
+            }])->withCount('products')->findOrFail($id);
 
             return response()->json([
                 'status' => true,
@@ -69,9 +78,6 @@ class CollectionController extends Controller
         }
     }
 
-    /**
-     * Tạo bộ sưu tập mới
-     */
     public function store(Request $request)
     {
         try {
@@ -95,7 +101,6 @@ class CollectionController extends Controller
 
             DB::beginTransaction();
 
-            // Xử lý hình ảnh nếu có
             $imagePath = null;
             if ($request->hasFile('image')) {
                 $image = $request->file('image');
@@ -104,18 +109,14 @@ class CollectionController extends Controller
                 $imagePath = '/storage/collections/' . $imageName;
             }
 
-            // Tạo slug từ tên
             $slug = Str::slug($request->name);
             $baseSlug = $slug;
             $counter = 1;
-
-            // Kiểm tra và tạo slug duy nhất
             while (Collection::where('slug', $slug)->exists()) {
                 $slug = $baseSlug . '-' . $counter;
                 $counter++;
             }
 
-            // Tạo bộ sưu tập mới
             $collection = Collection::create([
                 'name' => $request->name,
                 'description' => $request->description,
@@ -125,16 +126,13 @@ class CollectionController extends Controller
                 'slug' => $slug
             ]);
 
-            // Liên kết với các sản phẩm
             if ($request->has('products') && is_array($request->products)) {
                 $productData = [];
-
                 foreach ($request->products as $product) {
                     $productData[$product['product_id']] = [
                         'display_order' => $product['display_order'] ?? 0
                     ];
                 }
-
                 $collection->products()->attach($productData);
             }
 
@@ -156,9 +154,6 @@ class CollectionController extends Controller
         }
     }
 
-    /**
-     * Cập nhật bộ sưu tập
-     */
     public function update(Request $request, $id)
     {
         try {
@@ -184,9 +179,7 @@ class CollectionController extends Controller
 
             $collection = Collection::findOrFail($id);
 
-            // Xử lý hình ảnh nếu có
             if ($request->hasFile('image')) {
-                // Xóa hình ảnh cũ nếu có
                 if ($collection->image_url) {
                     $oldPath = str_replace('/storage', 'public', $collection->image_url);
                     if (Storage::exists($oldPath)) {
@@ -200,38 +193,30 @@ class CollectionController extends Controller
                 $collection->image_url = '/storage/collections/' . $imageName;
             }
 
-            // Cập nhật slug nếu tên thay đổi
             if ($collection->name !== $request->name) {
                 $slug = Str::slug($request->name);
                 $baseSlug = $slug;
                 $counter = 1;
-
-                // Kiểm tra và tạo slug duy nhất
                 while (Collection::where('slug', $slug)->where('collection_id', '!=', $id)->exists()) {
                     $slug = $baseSlug . '-' . $counter;
                     $counter++;
                 }
-
                 $collection->slug = $slug;
             }
 
-            // Cập nhật thông tin
             $collection->name = $request->name;
             $collection->description = $request->description;
             $collection->is_active = $request->has('is_active') ? $request->is_active : true;
             $collection->display_order = $request->display_order ?? 0;
             $collection->save();
 
-            // Cập nhật liên kết với sản phẩm
             if ($request->has('products')) {
                 $productData = [];
-
                 foreach ($request->products as $product) {
                     $productData[$product['product_id']] = [
                         'display_order' => $product['display_order'] ?? 0
                     ];
                 }
-
                 $collection->products()->sync($productData);
             }
 
@@ -253,9 +238,6 @@ class CollectionController extends Controller
         }
     }
 
-    /**
-     * Xóa bộ sưu tập
-     */
     public function destroy($id)
     {
         try {
@@ -263,7 +245,6 @@ class CollectionController extends Controller
 
             $collection = Collection::findOrFail($id);
 
-            // Xóa hình ảnh
             if ($collection->image_url) {
                 $imagePath = str_replace('/storage', 'public', $collection->image_url);
                 if (Storage::exists($imagePath)) {
@@ -271,10 +252,7 @@ class CollectionController extends Controller
                 }
             }
 
-            // Xóa liên kết với sản phẩm
             $collection->products()->detach();
-
-            // Xóa bộ sưu tập
             $collection->delete();
 
             DB::commit();
@@ -294,9 +272,6 @@ class CollectionController extends Controller
         }
     }
 
-    /**
-     * Cập nhật trạng thái bộ sưu tập
-     */
     public function toggleStatus($id)
     {
         try {
@@ -321,9 +296,6 @@ class CollectionController extends Controller
         }
     }
 
-    /**
-     * Quản lý sản phẩm trong bộ sưu tập
-     */
     public function manageProducts(Request $request, $id)
     {
         try {
@@ -370,9 +342,6 @@ class CollectionController extends Controller
         }
     }
 
-    /**
-     * Lấy danh sách sản phẩm để chọn vào bộ sưu tập
-     */
     public function getProductsForSelection(Request $request)
     {
         try {
@@ -390,7 +359,7 @@ class CollectionController extends Controller
             $products = $query->select('product_id', 'name', 'base_price', 'discount')
                 ->with(['colors' => function ($q) {
                     $q->with(['images' => function ($q) {
-                        $q->where('is_primary', true)->first();
+                        $q->where('is_primary', true)->orderBy('display_order'); // Bỏ ->first()
                     }]);
                 }])
                 ->paginate(10);

@@ -9,6 +9,7 @@ export default function AdminSidebar({ children }) {
     const [isVoucherMenuOpen, setIsVoucherMenuOpen] = useState(false);
     const [isOrderMenuOpen, setIsOrderMenuOpen] = useState(false);
     const [isCollectionMenuOpen, setIsCollectionMenuOpen] = useState(false);
+    const [isSalesReportMenuOpen, setIsSalesReportMenuOpen] = useState(false);
 
     return (
         <div className="min-h-screen bg-gray-100 flex">
@@ -197,6 +198,36 @@ export default function AdminSidebar({ children }) {
                                                 className="flex items-center px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md"
                                             >
                                                 Thêm bộ sưu tập
+                                            </Link>
+                                        </li>
+                                    </ul>
+                                )}
+                            </li>
+
+                            <li>
+                                <button
+                                    onClick={() => setIsSalesReportMenuOpen(!isSalesReportMenuOpen)}
+                                    className="flex items-center justify-between w-full px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md"
+                                >
+                                    <span>Thống kê doanh số</span>
+                                    <svg
+                                        className={`w-4 h-4 transform transition-transform ${isSalesReportMenuOpen ? 'rotate-180' : ''}`}
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </button>
+                                
+                                {isSalesReportMenuOpen && (
+                                    <ul className="mt-2 space-y-1 pl-6">
+                                        <li>
+                                            <Link
+                                                href={route('admin.reports.sales')}
+                                                className="flex items-center px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-md"
+                                            >
+                                                Báo cáo doanh số
                                             </Link>
                                         </li>
                                     </ul>

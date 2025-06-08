@@ -49,4 +49,8 @@ class Collection extends Model
             'product_id'
         )->withPivot('display_order')->orderBy('pivot_display_order');
     }
+    public function getProductsCountAttribute()
+    {
+        return $this->products()->count();
+    }
 }

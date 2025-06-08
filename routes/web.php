@@ -217,7 +217,6 @@ Route::get('/collections/{slug}', function ($slug) {
     ]);
 })->name('collections.detail');
 
-// Admin Collection routes
 Route::middleware('auth')->prefix('admin')->group(function () {
     Route::get('/collections', function () {
         return Inertia::render('Admin/Collections/Index');
@@ -232,6 +231,17 @@ Route::middleware('auth')->prefix('admin')->group(function () {
             'collectionId' => $id
         ]);
     })->name('admin.collections.edit');
+    Route::get('/collections/{collectionId}/products/manage', function ($collectionId) {
+        return Inertia::render('Admin/Collections/ManageProducts', [
+            'collectionId' => $collectionId
+        ]);
+    })->name('admin.collections.products.manage');
+});
+
+Route::middleware('auth')->prefix('admin')->group(function () {
+    Route::get('/reports/sales', function () {
+        return Inertia::render('Admin/Reports/Sales');
+    })->name('admin.reports.sales');
 });
 
 require __DIR__ . '/auth.php';

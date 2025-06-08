@@ -4,6 +4,7 @@ import { getProductDetail } from '@/services/api';
 import MainLayout from '@/components/layouts/MainLayout';
 import ProductGallery from '@/components/products/ProductGallery';
 import ColorSelector from '@/components/products/ColorSelector';
+import AlsoBoughtProducts from '@/components/products/AlsoBoughtProducts';
 import SizeSelector from '@/components/products/SizeSelector';
 import { addToRecentlyViewed } from '@/components/products/recentlyViewedHelper';
 
@@ -416,6 +417,8 @@ const Detail = ({ id }) => {
             </CardContent>
           </Card>
         </div>
+        
+        <AlsoBoughtProducts productId={product.product_id} />
       </div>
     );
   };

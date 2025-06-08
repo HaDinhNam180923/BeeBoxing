@@ -11,7 +11,7 @@ use App\Models\ProductInventory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
-
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class ProductController extends Controller
@@ -562,7 +562,6 @@ class ProductController extends Controller
         }
     }
 
-
     // Thêm method trong ProductController
     public function testProductDetail($id)
     {
@@ -640,5 +639,142 @@ class ProductController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    public function getAlsoBoughtProducts($productId, Request $request)
+    {
+        try {
+            // Kiểm tra và giới hạn tham số limit (1 đến 50)
+            $limit = min(max((int)$request->input('limit', 12), 1), 50);
+
+            // Tạo key cache dựa trên productId và limit
+            $cacheKey = "also_bought_products_{$productId}_{$limit}";
+
+            // Lấy dữ liệu từ cache hoặc tính toán mới
+            $products = Cache::remember($cacheKey, now()->addHours(1), function () use ($productId, $limit) {
+                // Bước 1: Tìm các đơn hàng chứa sản phẩm mục tiêu
+                $ordersWithProduct = DB::table('order_details as od1')
+                    ->select('od1.order_id')
+                    ->join('product_inventory as pi1', 'od1.inventory_id', '=', 'pi1.inventory_id')
+                    ->join('product_colors as pc1', 'pi1.color_id', '=', 'pc1.color_id')
+                    ->where('pc1.product_id', $productId)
+                    ->distinct()
+                    ->pluck('order_id');
+
+                // Nếu không có đơn hàng, lấy sản phẩm thay thế
+                if ($ordersWithProduct->isEmpty()) {
+                    return $this->getFallbackProducts($productId, $limit);
+                }
+
+                // Bước 2: Tìm các sản phẩm khác trong các đơn hàng đó
+                $alsoBoughtProducts = DB::table('order_details as od')
+                    ->select('pc.product_id', DB::raw('COUNT(*) as frequency'))
+                    ->join('product_inventory as pi', 'od.inventory_id', '=', 'pi.inventory_id')
+                    ->join('product_colors as pc', 'pi.color_id', '=', 'pc.color_id')
+                    ->join('products as p', 'pc.product_id', '=', 'p.product_id')
+                    ->whereIn('od.order_id', $ordersWithProduct)
+                    ->where('pc.product_id', '!=', $productId)
+                    ->where('p.is_active', true)
+                    ->groupBy('pc.product_id')
+                    ->orderByDesc('frequency')
+                    ->take($limit)
+                    ->pluck('product_id');
+
+                // Nếu không có sản phẩm liên quan, lấy sản phẩm thay thế
+                if ($alsoBoughtProducts->isEmpty()) {
+                    return $this->getFallbackProducts($productId, $limit);
+                }
+
+                // Bước 3: Lấy thông tin chi tiết sản phẩm
+                $products = Product::whereIn('product_id', $alsoBoughtProducts)
+                    ->where('is_active', true)
+                    ->with([
+                        'colors' => function ($query) {
+                            $query->with(['images' => function ($q) {
+                                $q->orderBy('is_primary', 'desc')
+                                    ->orderBy('display_order');
+                            }]);
+                        }
+                    ])
+                    ->get();
+
+                // Bước 4: Chuẩn hóa dữ liệu
+                foreach ($products as $product) {
+                    foreach ($product->colors as $color) {
+                        // Thêm primary_image, dùng ảnh mặc định nếu không có
+                        $primaryImage = $color->images->where('is_primary', true)->first();
+                        $color->primary_image = $primaryImage
+                            ?: ($color->images->first() ?: ['image_url' => '/storage/products/default.jpg']);
+                    }
+                    // Tính giá sau giảm giá
+                    $product->final_price = $product->base_price * (1 - $product->discount / 100);
+                }
+
+                // Sắp xếp theo thứ tự tần suất
+                return collect($alsoBoughtProducts)
+                    ->map(function ($id) use ($products) {
+                        return $products->firstWhere('product_id', $id);
+                    })
+                    ->filter()
+                    ->values();
+            });
+
+            return response()->json([
+                'status' => true,
+                'data' => $products
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Lỗi khi lấy sản phẩm người dùng cũng mua: ' . $e->getMessage(), [
+                'product_id' => $productId,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Đã xảy ra lỗi khi lấy sản phẩm',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Lấy sản phẩm thay thế (phổ biến trong cùng danh mục) nếu không có sản phẩm liên quan
+     *
+     * @param int $productId ID của sản phẩm
+     * @param int $limit Số lượng sản phẩm cần lấy
+     * @return \Illuminate\Support\Collection
+     */
+    private function getFallbackProducts($productId, $limit)
+    {
+        $product = Product::find($productId);
+        if (!$product) {
+            return collect([]);
+        }
+
+        $products = Product::where('category_id', $product->category_id)
+            ->where('is_active', true)
+            ->where('product_id', '!=', $productId)
+            ->orderBy('view_count', 'desc')
+            ->take($limit)
+            ->with([
+                'colors' => function ($query) {
+                    $query->with(['images' => function ($q) {
+                        $q->orderBy('is_primary', 'desc')
+                            ->orderBy('display_order');
+                    }]);
+                }
+            ])
+            ->get();
+
+        foreach ($products as $product) {
+            foreach ($product->colors as $color) {
+                $primaryImage = $color->images->where('is_primary', true)->first();
+                $color->primary_image = $primaryImage
+                    ?: ($color->images->first() ?: ['image_url' => '/storage/products/default.jpg']);
+            }
+            $product->final_price = $product->base_price * (1 - $product->discount / 100);
+        }
+
+        return $products;
     }
 }

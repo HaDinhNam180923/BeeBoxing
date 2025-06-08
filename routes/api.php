@@ -9,10 +9,9 @@ use App\Http\Controllers\Admin\CategoryController;
 use App\Http\Controllers\Admin\VoucherController;
 use App\Http\Controllers\Admin\OrderManageController;
 use App\Http\Controllers\Admin\UserController;
-
-
-
 use App\Http\Controllers\API\SlideController;
+
+use App\Http\Controllers\Admin\SalesReportController;
 
 
 // Route để lấy sản phẩm đã xem gần đây
@@ -62,7 +61,7 @@ Route::get('products/{id}', [ProductController::class, 'getProductDetail']);
 // Thêm vào nhóm routes API hiện có
 Route::get('/product/{id}', [ProductController::class, 'getProductForEdit']);
 Route::post('/product/{id}/update', [ProductController::class, 'updateProduct']);
-
+Route::get('/products/{id}/also-bought', [ProductController::class, 'getAlsoBoughtProducts']);
 
 //category
 Route::get('/categories', [CategoryController::class, 'getCategories']);
@@ -80,18 +79,24 @@ Route::middleware('auth')->group(function () {
 });
 
 // Admin Collection routes
-Route::middleware(['auth'])->prefix('admin/collections')->group(function () {
-    Route::get('/', [\App\Http\Controllers\Admin\CollectionController::class, 'index']);
-    Route::post('/', [\App\Http\Controllers\Admin\CollectionController::class, 'store']);
-    Route::get('/{id}', [\App\Http\Controllers\Admin\CollectionController::class, 'show']);
-    Route::post('/{id}', [\App\Http\Controllers\Admin\CollectionController::class, 'update']);
-    Route::delete('/{id}', [\App\Http\Controllers\Admin\CollectionController::class, 'destroy']);
-    Route::patch('/{id}/toggle-status', [\App\Http\Controllers\Admin\CollectionController::class, 'toggleStatus']);
-    Route::post('/{id}/products', [\App\Http\Controllers\Admin\CollectionController::class, 'manageProducts']);
-    Route::get('/products/selection', [\App\Http\Controllers\Admin\CollectionController::class, 'getProductsForSelection']);
+Route::prefix('admin/collections')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Admin\CollectionManageController::class, 'index']);
+    Route::post('/', [\App\Http\Controllers\Admin\CollectionManageController::class, 'store']);
+    Route::get('/{id}', [\App\Http\Controllers\Admin\CollectionManageController::class, 'show']);
+    Route::post('/{id}', [\App\Http\Controllers\Admin\CollectionManageController::class, 'update']);
+    Route::delete('/{id}', [\App\Http\Controllers\Admin\CollectionManageController::class, 'destroy']);
+    Route::patch('/{id}/toggle-status', [\App\Http\Controllers\Admin\CollectionManageController::class, 'toggleStatus']);
+    Route::post('/{id}/products', [\App\Http\Controllers\Admin\CollectionManageController::class, 'manageProducts']);
+    Route::get('/products/selection', [\App\Http\Controllers\Admin\CollectionManageController::class, 'getProductsForSelection']);
 });
 
 // Public Collection routes
 Route::get('/collections', [\App\Http\Controllers\API\CollectionController::class, 'getCollections']);
 Route::get('/collections/featured', [\App\Http\Controllers\API\CollectionController::class, 'getFeaturedCollections']);
 Route::get('/collections/{slug}', [\App\Http\Controllers\API\CollectionController::class, 'getCollectionDetail']);
+
+// Route doanh số
+Route::prefix('admin/sales')->group(function () {
+    Route::get('/overview', [SalesReportController::class, 'getOverview']);
+    Route::get('/daily', [SalesReportController::class, 'getDailyReport']);
+});
