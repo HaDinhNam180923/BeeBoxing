@@ -1,4 +1,3 @@
-// src/components/products/ProductGallery.jsx
 import React, { useState, useEffect } from 'react';
 
 const ProductGallery = ({ color }) => {
@@ -181,34 +180,56 @@ const ProductGallery = ({ color }) => {
 
           {/* Thumbnail grid cho desktop */}
           <div className="hidden md:block">
-            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400">
-              {images.map((image, index) => (
-                <button
-                  key={image.image_id}
-                  onClick={() => handleImageChange(index)}
-                  className={`relative w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 transition-all duration-300 ${
-                    currentImageIndex === index 
-                      ? 'ring-2 ring-blue-500 ring-offset-2 shadow-lg scale-105' 
-                      : 'hover:ring-2 hover:ring-blue-300 hover:ring-offset-1 hover:shadow-md hover:scale-102'
-                  }`}
-                >
-                  <img
-                    src={image.image_url}
-                    alt={image.alt_text}
-                    className="w-full h-full object-cover transition-transform duration-300 hover:scale-110"
-                  />
-                  
-                  {/* Overlay khi active */}
-                  {currentImageIndex === index && (
-                    <div className="absolute inset-0 bg-blue-500 bg-opacity-10" />
-                  )}
-                  
-                  {/* Số thứ tự */}
-                  <div className="absolute bottom-1 right-1 bg-black bg-opacity-60 text-white text-xs px-1.5 py-0.5 rounded">
-                    {index + 1}
+            {/* Container với padding để tránh bị cắt viền */}
+            <div className="px-2 py-2">
+              <div className="flex gap-4 overflow-x-auto hide-scrollbar">
+                <style>
+                  {`
+                    .hide-scrollbar::-webkit-scrollbar {
+                      display: none;
+                    }
+                    .hide-scrollbar {
+                      scrollbar-width: none;
+                      -ms-overflow-style: none;
+                    }
+                  `}
+                </style>
+                {images.map((image, index) => (
+                  <div
+                    key={image.image_id}
+                    className="flex-shrink-0 p-2" // Tăng padding để chứa cả scale và ring
+                  >
+                    <button
+                      onClick={() => handleImageChange(index)}
+                      className={`relative w-20 h-20 rounded-xl transition-all duration-300 block ${
+                        currentImageIndex === index 
+                          ? 'ring-2 ring-blue-500 ring-offset-2 shadow-lg' 
+                          : 'hover:ring-2 hover:ring-blue-300 hover:ring-offset-1 hover:shadow-md hover:scale-102'
+                      }`}
+                    >
+                      <img
+                        src={image.image_url}
+                        alt={image.alt_text}
+                        className={`w-full h-full object-cover rounded-xl transition-transform duration-300 ${
+                          currentImageIndex === index ? 'scale-105' : ''
+                        }`}
+                      />
+                      
+                      {/* Overlay khi active */}
+                      {currentImageIndex === index && (
+                        <div className="absolute inset-0 bg-blue-500 bg-opacity-10 rounded-xl scale-105" />
+                      )}
+                      
+                      {/* Số thứ tự */}
+                      <div className={`absolute bottom-1 right-1 bg-black bg-opacity-60 text-white text-xs px-1.5 py-0.5 rounded transition-transform duration-300 ${
+                        currentImageIndex === index ? 'scale-105' : ''
+                      }`}>
+                        {index + 1}
+                      </div>
+                    </button>
                   </div>
-                </button>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         </div>

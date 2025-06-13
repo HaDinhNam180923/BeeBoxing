@@ -9,7 +9,6 @@ export default function OrderIndex({ auth }) {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('ALL');
 
-    // Calculate order counts for each status
     const getStatusCounts = () => {
         const counts = {
             ALL: orders.length,
@@ -30,12 +29,12 @@ export default function OrderIndex({ auth }) {
     };
 
     const tabs = [
-        { id: 'ALL', label: 'All Orders' },
-        { id: 'PENDING', label: 'Pending' },
-        { id: 'CONFIRMED', label: 'Confirmed' },
-        { id: 'DELIVERING', label: 'Delivering' },
-        { id: 'COMPLETED', label: 'Completed' },
-        { id: 'CANCELLED', label: 'Cancelled' }
+        { id: 'ALL', label: 'Tất cả đơn hàng' },
+        { id: 'PENDING', label: 'Chờ xác nhận' },
+        { id: 'CONFIRMED', label: 'Đã xác nhận' },
+        { id: 'DELIVERING', label: 'Đang giao' },
+        { id: 'COMPLETED', label: 'Hoàn thành' },
+        { id: 'CANCELLED', label: 'Đã hủy' }
     ];
 
     useEffect(() => {
@@ -48,7 +47,7 @@ export default function OrderIndex({ auth }) {
             setOrders(response.data.data);
             setLoading(false);
         } catch (error) {
-            console.error('Error fetching orders:', error);
+            console.error('Lỗi khi lấy danh sách đơn hàng:', error);
             setLoading(false);
         }
     };
@@ -68,7 +67,6 @@ export default function OrderIndex({ auth }) {
         ? orders 
         : orders.filter(order => order.order_status === activeTab);
 
-    // Get counts for all statuses
     const statusCounts = getStatusCounts();
 
     if (loading) {
@@ -83,13 +81,12 @@ export default function OrderIndex({ auth }) {
 
     return (
         <AuthenticatedLayout user={auth.user}>
-            <Head title="Order History" />
+            <Head title="Lịch sử đơn hàng" />
             
             <div className="py-12">
                 <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-                    <h1 className="text-2xl font-bold mb-6">Order History</h1>
+                    <h1 className="text-2xl font-bold mb-6">Lịch sử đơn hàng</h1>
                     
-                    {/* Status Tabs */}
                     <div className="mb-6 border-b border-gray-200">
                         <nav className="-mb-px flex space-x-8" aria-label="Tabs">
                             {tabs.map(tab => (
@@ -115,7 +112,7 @@ export default function OrderIndex({ auth }) {
 
                     {filteredOrders.length === 0 ? (
                         <div className="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6 text-center">
-                            No orders found
+                            Không tìm thấy đơn hàng
                         </div>
                     ) : (
                         <div className="space-y-4">
@@ -129,16 +126,20 @@ export default function OrderIndex({ auth }) {
                                         <div className="flex justify-between items-start">
                                             <div>
                                                 <p className="font-semibold text-lg">
-                                                    Order #{order.tracking_number}
+                                                    Đơn hàng #{order.tracking_number}
                                                 </p>
                                                 <p className="text-sm text-gray-500 mt-1">
-                                                    Ordered on {new Date(order.order_date).toLocaleDateString()}
+                                                    Đặt ngày {new Date(order.order_date).toLocaleDateString('vi-VN')}
                                                 </p>
                                                 <div className="mt-2">
                                                     <span 
                                                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.order_status)}`}
                                                     >
-                                                        {order.order_status}
+                                                        {order.order_status === 'PENDING' ? 'Chờ xác nhận' :
+                                                         order.order_status === 'CONFIRMED' ? 'Đã xác nhận' :
+                                                         order.order_status === 'DELIVERING' ? 'Đang giao' :
+                                                         order.order_status === 'COMPLETED' ? 'Hoàn thành' :
+                                                         order.order_status === 'CANCELLED' ? 'Đã hủy' : order.order_status}
                                                     </span>
                                                 </div>
                                             </div>
@@ -148,33 +149,44 @@ export default function OrderIndex({ auth }) {
                                                     {formatVND(order.final_amount)}
                                                 </p>
                                                 <p className="text-sm text-gray-500 mt-1">
-                                                    {order.total_items} items
+                                                    {order.total_items} sản phẩm
                                                 </p>
                                                 <p className={`text-sm mt-1 ${
                                                     order.payment_status === 'PAID' 
                                                         ? 'text-green-600' 
                                                         : 'text-yellow-600'
                                                 }`}>
-                                                    {order.payment_status}
+                                                    {order.payment_status === 'PAID' ? 'Đã thanh toán' : 'Chưa thanh toán'}
                                                 </p>
                                             </div>
                                         </div>
                                         
                                         {order.items && order.items.length > 0 && (
-                                            <div className="mt-4 flex space-x-4">
-                                                {order.items.slice(0, 4).map((item, index) => (
-                                                    <img 
-                                                        key={index}
-                                                        src={item.image_url} 
-                                                        alt={`Product ${index + 1}`}
-                                                        className="w-16 h-16 object-cover rounded"
-                                                    />
-                                                ))}
-                                                {order.items.length > 4 && (
-                                                    <div className="w-16 h-16 bg-gray-100 rounded flex items-center justify-center">
-                                                        <span className="text-sm text-gray-500">+{order.items.length - 4}</span>
-                                                    </div>
-                                                )}
+                                            <div className="mt-4 pl-4">
+                                                <div className="flex flex-col space-y-2">
+                                                    {order.items.slice(0, 4).map((item, index) => (
+                                                        <div key={index} className="flex items-center space-x-4">
+                                                            <img 
+                                                                src={item.image_url} 
+                                                                alt={item.product_name}
+                                                                className="w-16 h-16 object-cover rounded"
+                                                            />
+                                                            <div>
+                                                                <p className="text-sm text-gray-600 font-semibold">
+                                                                    {item.product_name}
+                                                                </p>
+                                                                <p className="text-sm text-gray-500">
+                                                                    {item.color_name}, {item.size} x {item.quantity}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                    {order.items.length > 4 && (
+                                                        <div className="text-sm text-gray-600">
+                                                            và {order.items.length - 4} sản phẩm khác
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
                                     </div>

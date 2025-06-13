@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Product;
 use App\Models\ProductColor;
+
+use App\Models\Category;
 use App\Models\ProductImage;
 use App\Models\ProductInventory;
 use Illuminate\Support\Facades\DB;
@@ -241,7 +243,23 @@ class ProductController extends Controller
 
             // Apply filters if provided
             if ($request->has('category_id')) {
-                $query->where('category_id', $request->category_id);
+                // Hàm đệ quy để lấy tất cả category_id của danh mục và các danh mục con
+                $getAllChildCategoryIds = function ($categoryId) use (&$getAllChildCategoryIds) {
+                    $categoryIds = [$categoryId];
+                    $children = Category::where('parent_category_id', $categoryId)
+                        ->pluck('category_id')
+                        ->toArray();
+
+                    foreach ($children as $childId) {
+                        $categoryIds = array_merge($categoryIds, $getAllChildCategoryIds($childId));
+                    }
+
+                    return $categoryIds;
+                };
+
+                // Lấy tất cả category_id, bao gồm danh mục gốc và toàn bộ danh mục con
+                $categoryIds = $getAllChildCategoryIds($request->category_id);
+                $query->whereIn('category_id', array_unique($categoryIds));
             }
 
             if ($request->has('brand')) {
@@ -279,29 +297,41 @@ class ProductController extends Controller
             }
 
             // Pagination
-            // Thêm xử lý tham số page một cách rõ ràng
             $page = $request->get('page', 1);
             $perPage = $request->get('per_page', 10);
             $products = $query->paginate($perPage, ['*'], 'page', $page);
 
+            // Standardize response data
             $items = collect($products->items())->map(function ($product) {
+                // Calculate final price
                 $product->final_price = $product->base_price * (1 - $product->discount / 100);
 
-                // Add stock information  
+                // Calculate total stock
                 $product->total_stock = $product->colors->sum(function ($color) {
                     return $color->inventory->sum('stock_quantity');
                 });
 
-                // Add primary image for each color
+                // Transform colors data
                 $product->colors->transform(function ($color) {
+                    // Add primary image
                     $color->primary_image = $color->images->where('is_primary', true)->first();
+
+                    // Format inventory data
+                    $color->inventory = $color->inventory->map(function ($inv) {
+                        return [
+                            'inventory_id' => $inv->inventory_id,
+                            'size' => $inv->size,
+                            'stock_quantity' => (int)$inv->stock_quantity,
+                            'price_adjustment' => (float)$inv->price_adjustment
+                        ];
+                    });
+
                     return $color;
                 });
 
                 return $product;
             });
 
-            // Cập nhật lại items trong response
             return response()->json([
                 'status' => 'success',
                 'message' => 'Products retrieved successfully',
@@ -316,6 +346,7 @@ class ProductController extends Controller
                 ]
             ], 200);
         } catch (\Exception $e) {
+            Log::error('Error in getProducts: ' . $e->getMessage());
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to retrieve products',
@@ -575,15 +606,11 @@ class ProductController extends Controller
         return response()->json($result);
     }
 
-    // Thêm phương thức này vào ProductController.php
 
-    /**
-     * Lấy thông tin các sản phẩm đã xem gần đây dựa trên danh sách ID
-     */
     public function getRecentlyViewedProducts(Request $request)
     {
         try {
-            $productIds = explode(',', $request->input('ids', ''));
+            $productIds = array_filter(explode(',', $request->input('ids', '')));
 
             if (empty($productIds)) {
                 return response()->json([
@@ -592,40 +619,74 @@ class ProductController extends Controller
                 ]);
             }
 
-            // Lấy thông tin sản phẩm từ database với cấu trúc dữ liệu đầy đủ
+            // Lấy thông tin sản phẩm với đầy đủ relationships
             $products = Product::whereIn('product_id', $productIds)
                 ->where('is_active', true)
                 ->with([
+                    'category',
                     'colors' => function ($query) {
-                        $query->with(['images' => function ($q) {
-                            $q->orderBy('is_primary', 'desc')
-                                ->orderBy('display_order');
-                        }]);
+                        $query->orderBy('color_name')
+                            ->with([
+                                'images' => function ($q) {
+                                    $q->orderBy('is_primary', 'desc')
+                                        ->orderBy('display_order');
+                                },
+                                'inventory' => function ($q) {
+                                    $q->orderBy('size');
+                                }
+                            ]);
                     }
                 ])
                 ->get();
 
-            // Chuẩn hóa dữ liệu để phù hợp với ProductCard
-            foreach ($products as $product) {
-                foreach ($product->colors as $color) {
-                    // Thêm primary_image vào mỗi color
-                    if ($color->images && count($color->images) > 0) {
-                        $primaryImage = $color->images->where('is_primary', true)->first();
-                        // Nếu không có hình ảnh chính, sử dụng hình ảnh đầu tiên
-                        $color->primary_image = $primaryImage ?: $color->images->first();
+            // Chuẩn hóa dữ liệu
+            $products = $products->map(function ($product) {
+                // Tính giá sau giảm giá
+                $product->final_price = $product->base_price * (1 - $product->discount / 100);
+
+                // Tính tổng tồn kho
+                $product->total_stock = $product->colors->sum(function ($color) {
+                    return $color->inventory->sum('stock_quantity');
+                });
+
+                // Xử lý specifications
+                if (is_string($product->specifications)) {
+                    try {
+                        $product->specifications = json_decode($product->specifications, true);
+                    } catch (\Exception $e) {
+                        $product->specifications = [];
                     }
                 }
 
-                // Tính giá sau khi giảm giá
-                $product->final_price = $product->base_price * (1 - $product->discount / 100);
-            }
+                // Chuẩn hóa colors
+                $product->colors->transform(function ($color) {
+                    // Thêm primary_image
+                    $color->primary_image = $color->images->where('is_primary', true)->first()
+                        ?: ($color->images->first() ?: ['image_url' => '/storage/products/default.jpg']);
 
-            // Sắp xếp sản phẩm theo thứ tự ID đã truyền vào
+                    // Chuẩn hóa inventory
+                    $color->inventory = $color->inventory->map(function ($inv) {
+                        return [
+                            'inventory_id' => $inv->inventory_id,
+                            'size' => $inv->size,
+                            'stock_quantity' => (int)$inv->stock_quantity,
+                            'price_adjustment' => (float)$inv->price_adjustment
+                        ];
+                    });
+
+                    return $color;
+                });
+
+                return $product;
+            });
+
+            // Sắp xếp theo thứ tự ID đã truyền vào
             $orderedProducts = collect($productIds)
                 ->map(function ($id) use ($products) {
                     return $products->firstWhere('product_id', $id);
                 })
-                ->filter();
+                ->filter()
+                ->values();
 
             return response()->json([
                 'status' => true,
@@ -689,26 +750,62 @@ class ProductController extends Controller
                 $products = Product::whereIn('product_id', $alsoBoughtProducts)
                     ->where('is_active', true)
                     ->with([
+                        'category',
                         'colors' => function ($query) {
-                            $query->with(['images' => function ($q) {
-                                $q->orderBy('is_primary', 'desc')
-                                    ->orderBy('display_order');
-                            }]);
+                            $query->orderBy('color_name')
+                                ->with([
+                                    'images' => function ($q) {
+                                        $q->orderBy('is_primary', 'desc')
+                                            ->orderBy('display_order');
+                                    },
+                                    'inventory' => function ($q) {
+                                        $q->orderBy('size');
+                                    }
+                                ]);
                         }
                     ])
                     ->get();
 
                 // Bước 4: Chuẩn hóa dữ liệu
-                foreach ($products as $product) {
-                    foreach ($product->colors as $color) {
-                        // Thêm primary_image, dùng ảnh mặc định nếu không có
-                        $primaryImage = $color->images->where('is_primary', true)->first();
-                        $color->primary_image = $primaryImage
-                            ?: ($color->images->first() ?: ['image_url' => '/storage/products/default.jpg']);
-                    }
+                $products = $products->map(function ($product) {
                     // Tính giá sau giảm giá
                     $product->final_price = $product->base_price * (1 - $product->discount / 100);
-                }
+
+                    // Tính tổng tồn kho
+                    $product->total_stock = $product->colors->sum(function ($color) {
+                        return $color->inventory->sum('stock_quantity');
+                    });
+
+                    // Xử lý specifications
+                    if (is_string($product->specifications)) {
+                        try {
+                            $product->specifications = json_decode($product->specifications, true);
+                        } catch (\Exception $e) {
+                            $product->specifications = [];
+                        }
+                    }
+
+                    // Chuẩn hóa colors
+                    $product->colors->transform(function ($color) {
+                        // Thêm primary_image
+                        $color->primary_image = $color->images->where('is_primary', true)->first()
+                            ?: ($color->images->first() ?: ['image_url' => '/storage/products/default.jpg']);
+
+                        // Chuẩn hóa inventory
+                        $color->inventory = $color->inventory->map(function ($inv) {
+                            return [
+                                'inventory_id' => $inv->inventory_id,
+                                'size' => $inv->size,
+                                'stock_quantity' => (int)$inv->stock_quantity,
+                                'price_adjustment' => (float)$inv->price_adjustment
+                            ];
+                        });
+
+                        return $color;
+                    });
+
+                    return $product;
+                });
 
                 // Sắp xếp theo thứ tự tần suất
                 return collect($alsoBoughtProducts)
@@ -757,23 +854,61 @@ class ProductController extends Controller
             ->orderBy('view_count', 'desc')
             ->take($limit)
             ->with([
+                'category',
                 'colors' => function ($query) {
-                    $query->with(['images' => function ($q) {
-                        $q->orderBy('is_primary', 'desc')
-                            ->orderBy('display_order');
-                    }]);
+                    $query->orderBy('color_name')
+                        ->with([
+                            'images' => function ($q) {
+                                $q->orderBy('is_primary', 'desc')
+                                    ->orderBy('display_order');
+                            },
+                            'inventory' => function ($q) {
+                                $q->orderBy('size');
+                            }
+                        ]);
                 }
             ])
             ->get();
 
-        foreach ($products as $product) {
-            foreach ($product->colors as $color) {
-                $primaryImage = $color->images->where('is_primary', true)->first();
-                $color->primary_image = $primaryImage
-                    ?: ($color->images->first() ?: ['image_url' => '/storage/products/default.jpg']);
-            }
+        $products = $products->map(function ($product) {
+            // Tính giá sau giảm giá
             $product->final_price = $product->base_price * (1 - $product->discount / 100);
-        }
+
+            // Tính tổng tồn kho
+            $product->total_stock = $product->colors->sum(function ($color) {
+                return $color->inventory->sum('stock_quantity');
+            });
+
+            // Xử lý specifications
+            if (is_string($product->specifications)) {
+                try {
+                    $product->specifications = json_decode($product->specifications, true);
+                } catch (\Exception $e) {
+                    $product->specifications = [];
+                }
+            }
+
+            // Chuẩn hóa colors
+            $product->colors->transform(function ($color) {
+                // Thêm primary_image
+                $color->primary_image = $color->images->where('is_primary', true)->first()
+                    ?: ($color->images->first() ?: ['image_url' => '/storage/products/default.jpg']);
+
+                // Chuẩn hóa inventory
+                $color->inventory = $color->inventory->map(function ($inv) {
+                    return [
+                        'inventory_id' => $inv->inventory_id,
+                        'size' => $inv->size,
+                        'stock_quantity' => (int)$inv->stock_quantity,
+                        'price_adjustment' => (float)$inv->price_adjustment
+                    ];
+                });
+
+                return $color;
+            });
+
+            return $product;
+        });
 
         return $products;
     }

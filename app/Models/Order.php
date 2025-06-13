@@ -43,6 +43,11 @@ class Order extends Model
         return $this->belongsTo(Address::class, 'address_id');
     }
 
+    public function deliveryOrder()
+    {
+        return $this->hasOne(DeliveryOrder::class, 'order_id', 'order_id');
+    }
+
     public function voucher()
     {
         return $this->belongsTo(Voucher::class, 'voucher_id');

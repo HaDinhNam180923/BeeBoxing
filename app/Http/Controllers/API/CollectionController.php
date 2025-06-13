@@ -39,35 +39,69 @@ class CollectionController extends Controller
     public function getCollectionDetail($slug)
     {
         try {
+            // Lấy bộ sưu tập với các sản phẩm và relationships đầy đủ
             $collection = Collection::where('slug', $slug)
                 ->where('is_active', true)
                 ->with(['products' => function ($query) {
                     $query->where('is_active', true)
-                        ->with(['colors' => function ($q) {
-                            $q->with(['images' => function ($q) {
-                                $q->where('is_primary', true);
-                            }]);
-                        }])
+                        ->with([
+                            'category',
+                            'colors' => function ($q) {
+                                $q->orderBy('color_name')
+                                    ->with([
+                                        'images' => function ($q) {
+                                            $q->orderBy('display_order');
+                                        },
+                                        'inventory' => function ($q) {
+                                            $q->orderBy('size');
+                                        }
+                                    ]);
+                            }
+                        ])
                         ->orderBy('pivot_display_order');
                 }])
                 ->firstOrFail();
 
-            // Tính giá cuối cùng cho mỗi sản phẩm
-            $collection->products->each(function ($product) {
-                $product->final_price = $product->base_price * (1 - ($product->discount / 100));
+            // Chuẩn hóa dữ liệu sản phẩm
+            $collection->products = $collection->products->map(function ($product) {
+                // Tính giá cuối cùng
+                $product->final_price = $product->base_price * (1 - $product->discount / 100);
 
-                // Đảm bảo mỗi màu có primary_image
-                $product->colors->each(function ($color) {
-                    $color->primary_image = $color->images->first();
+                // Tính tổng tồn kho
+                $product->total_stock = $product->colors->sum(function ($color) {
+                    return $color->inventory->sum('stock_quantity');
                 });
+
+                // Chuẩn hóa colors
+                $product->colors->transform(function ($color) {
+                    // Thêm primary_image
+                    $color->primary_image = $color->images->where('is_primary', true)->first();
+
+                    // Chuẩn hóa inventory
+                    $color->inventory = $color->inventory->map(function ($inv) {
+                        return [
+                            'inventory_id' => $inv->inventory_id,
+                            'size' => $inv->size,
+                            'stock_quantity' => (int)$inv->stock_quantity,
+                            'price_adjustment' => (float)$inv->price_adjustment
+                        ];
+                    });
+
+                    return $color;
+                });
+
+                return $product;
             });
 
             return response()->json([
                 'status' => true,
                 'data' => $collection
-            ]);
+            ], 200);
         } catch (\Exception $e) {
-            Log::error('Lỗi khi lấy chi tiết bộ sưu tập: ' . $e->getMessage());
+            Log::error('Lỗi khi lấy chi tiết bộ sưu tập: ' . $e->getMessage(), [
+                'slug' => $slug,
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'status' => false,
                 'message' => 'Lỗi khi lấy chi tiết bộ sưu tập',

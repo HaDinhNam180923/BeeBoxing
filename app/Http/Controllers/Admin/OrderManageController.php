@@ -4,27 +4,21 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
-use App\Models\OrderDetail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class OrderManageController extends Controller
 {
-    /**
-     * Lấy danh sách đơn hàng với phân trang và lọc
-     */
     public function index(Request $request)
     {
         try {
             $query = Order::with(['user', 'address', 'orderDetails.inventory.color.product']);
 
-            // Lọc theo trạng thái
             if ($request->has('status') && $request->status != 'all') {
                 $query->where('order_status', $request->status);
             }
 
-            // Tìm kiếm theo email khách hàng
             if ($request->has('search') && !empty($request->search)) {
                 $search = $request->search;
                 $query->whereHas('user', function ($q) use ($search) {
@@ -32,7 +26,6 @@ class OrderManageController extends Controller
                 });
             }
 
-            // Lọc theo ngày
             if ($request->has('date_from') && !empty($request->date_from)) {
                 $query->whereDate('order_date', '>=', $request->date_from);
             }
@@ -41,12 +34,10 @@ class OrderManageController extends Controller
                 $query->whereDate('order_date', '<=', $request->date_to);
             }
 
-            // Sắp xếp
             $sortField = $request->input('sort_by', 'order_date');
             $sortDirection = $request->input('sort_direction', 'desc');
             $query->orderBy($sortField, $sortDirection);
 
-            // Phân trang
             $perPage = $request->input('per_page', 15);
             $orders = $query->paginate($perPage);
 
@@ -64,9 +55,6 @@ class OrderManageController extends Controller
         }
     }
 
-    /**
-     * Lấy chi tiết đơn hàng
-     */
     public function show($id)
     {
         try {
@@ -74,7 +62,9 @@ class OrderManageController extends Controller
                 'user',
                 'address',
                 'voucher',
-                'orderDetails.inventory.color.product'
+                'orderDetails.inventory.color' => function ($query) {
+                    $query->with(['images', 'product']);
+                }
             ])->findOrFail($id);
 
             return response()->json([
@@ -91,9 +81,6 @@ class OrderManageController extends Controller
         }
     }
 
-    /**
-     * Cập nhật trạng thái đơn hàng
-     */
     public function updateStatus(Request $request, $id)
     {
         try {
@@ -107,7 +94,6 @@ class OrderManageController extends Controller
             $oldStatus = $order->order_status;
             $newStatus = $request->order_status;
 
-            // Kiểm tra logic chuyển trạng thái
             if (!$this->validateStatusTransition($oldStatus, $newStatus)) {
                 return response()->json([
                     'status' => false,
@@ -115,20 +101,27 @@ class OrderManageController extends Controller
                 ], 422);
             }
 
-            // Nếu hủy đơn hàng, hoàn lại số lượng tồn kho
             if ($newStatus === 'CANCELLED' && ($oldStatus === 'PENDING' || $oldStatus === 'CONFIRMED')) {
                 foreach ($order->orderDetails as $detail) {
                     $detail->inventory->increment('stock_quantity', $detail->quantity);
                 }
             }
 
-            // Nếu hoàn thành đơn hàng và thanh toán là COD, cập nhật trạng thái thanh toán
             if ($newStatus === 'COMPLETED' && $order->payment_method === 'COD') {
                 $order->payment_status = 'PAID';
             }
 
             $order->order_status = $newStatus;
             $order->save();
+
+            $order->load([
+                'user',
+                'address',
+                'voucher',
+                'orderDetails.inventory.color' => function ($query) {
+                    $query->with(['images', 'product']);
+                }
+            ]);
 
             DB::commit();
 
@@ -148,25 +141,19 @@ class OrderManageController extends Controller
         }
     }
 
-    /**
-     * Kiểm tra tính hợp lệ của việc chuyển trạng thái
-     */
     private function validateStatusTransition($oldStatus, $newStatus)
     {
         $validTransitions = [
             'PENDING' => ['CONFIRMED', 'CANCELLED'],
             'CONFIRMED' => ['DELIVERING', 'CANCELLED'],
             'DELIVERING' => ['COMPLETED', 'CANCELLED'],
-            'COMPLETED' => [], // Không thể chuyển từ COMPLETED sang trạng thái khác
-            'CANCELLED' => [] // Không thể chuyển từ CANCELLED sang trạng thái khác
+            'COMPLETED' => [],
+            'CANCELLED' => []
         ];
 
         return in_array($newStatus, $validTransitions[$oldStatus] ?? []);
     }
 
-    /**
-     * Thống kê đơn hàng theo trạng thái
-     */
     public function statistics()
     {
         try {

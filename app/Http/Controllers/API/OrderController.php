@@ -22,13 +22,11 @@ class OrderController extends Controller
 {
     protected $vnpayService;
 
-    // Khởi tạo VNPayService để xử lý các tác vụ liên quan đến thanh toán
     public function __construct(VNPayService $vnpayService)
     {
         $this->vnpayService = $vnpayService;
     }
 
-    // Hàm tạo mã đơn hàng unique
     private function generateTrackingNumber()
     {
         do {
@@ -43,7 +41,6 @@ class OrderController extends Controller
     public function placeOrder(Request $request)
     {
         try {
-            // Validate dữ liệu đầu vào
             $validated = $request->validate([
                 'address_id' => 'required|exists:addresses,address_id',
                 'selected_items' => 'required|array',
@@ -55,10 +52,8 @@ class OrderController extends Controller
 
             $userId = Auth::id();
 
-            // Bắt đầu transaction để đảm bảo tính nhất quán của dữ liệu
             DB::beginTransaction();
 
-            // Lấy thông tin các sản phẩm được chọn từ giỏ hàng
             $cartItems = CartItem::whereIn('cart_item_id', $validated['selected_items'])
                 ->whereHas('cart', function ($query) use ($userId) {
                     $query->where('user_id', $userId);
@@ -66,7 +61,6 @@ class OrderController extends Controller
                 ->with(['inventory.color.product'])
                 ->get();
 
-            // Kiểm tra xem có sản phẩm nào được chọn không
             if ($cartItems->isEmpty()) {
                 return response()->json([
                     'status' => false,
@@ -74,12 +68,10 @@ class OrderController extends Controller
                 ], 400);
             }
 
-            // Xử lý từng sản phẩm trong giỏ hàng
             $subtotalAmount = 0;
             $orderItems = [];
 
             foreach ($cartItems as $item) {
-                // Kiểm tra số lượng tồn kho
                 if ($item->quantity > $item->inventory->stock_quantity) {
                     DB::rollBack();
                     return response()->json([
@@ -88,7 +80,6 @@ class OrderController extends Controller
                     ], 400);
                 }
 
-                // Tính giá sản phẩm sau khi áp dụng các loại giảm giá
                 $product = $item->inventory->color->product;
                 $basePrice = $product->base_price * (1 - ($product->discount / 100));
                 $finalPrice = round($basePrice * (1 + ($item->inventory->price_adjustment / 100)));
@@ -102,11 +93,9 @@ class OrderController extends Controller
                     'subtotal' => $subtotal
                 ];
 
-                // Cập nhật số lượng tồn kho
                 $item->inventory->decrement('stock_quantity', $item->quantity);
             }
 
-            // Xử lý voucher nếu có
             $voucherId = null;
             $discountAmount = 0;
 
@@ -125,7 +114,6 @@ class OrderController extends Controller
                 if ($voucher && $subtotalAmount >= $voucher->minimum_order_amount) {
                     $voucherId = $voucher->voucher_id;
 
-                    // Tính số tiền giảm giá dựa vào loại voucher
                     if ($voucher->discount_type === 'percentage') {
                         $discountAmount = min(
                             ($subtotalAmount * $voucher->discount_amount / 100),
@@ -138,16 +126,13 @@ class OrderController extends Controller
                         );
                     }
 
-                    // Cập nhật số lần sử dụng voucher
                     $voucher->increment('used_count');
                 }
             }
 
-            // Tính tổng tiền cuối cùng
-            $shippingFee = 30000; // Phí vận chuyển cố định
+            $shippingFee = 30000;
             $finalAmount = $subtotalAmount + $shippingFee - $discountAmount;
 
-            // Tạo đơn hàng mới
             $order = Order::create([
                 'user_id' => $userId,
                 'address_id' => $validated['address_id'],
@@ -164,7 +149,6 @@ class OrderController extends Controller
                 'tracking_number' => $this->generateTrackingNumber()
             ]);
 
-            // Tạo chi tiết đơn hàng
             foreach ($orderItems as $item) {
                 OrderDetail::create([
                     'order_id' => $order->order_id,
@@ -175,10 +159,8 @@ class OrderController extends Controller
                 ]);
             }
 
-            // Xóa sản phẩm đã đặt khỏi giỏ hàng
             CartItem::whereIn('cart_item_id', $validated['selected_items'])->delete();
 
-            // Xử lý phương thức thanh toán
             if ($validated['payment_method'] === 'VNPAY') {
                 $paymentData = $this->vnpayService->createPaymentData($order);
 
@@ -197,7 +179,6 @@ class OrderController extends Controller
                 ]);
             }
 
-            // Nếu là thanh toán COD
             DB::commit();
 
             return response()->json([
@@ -220,7 +201,6 @@ class OrderController extends Controller
         }
     }
 
-    // Xử lý callback từ VNPay
     public function handleVNPayReturn(Request $request)
     {
         if ($this->vnpayService->verifyReturnUrl($request->all())) {
@@ -253,17 +233,18 @@ class OrderController extends Controller
         return redirect()->route('payment.failed')->with('error', 'Dữ liệu không hợp lệ');
     }
 
-    // In OrderController.php, add these methods
     public function getOrderHistory()
     {
         try {
             $userId = Auth::id();
             $orders = Order::where('user_id', $userId)
-                ->with(['orderDetails.inventory.color.product', 'address'])
+                ->with([
+                    'orderDetails.inventory.color.product',
+                    'address'
+                ])
                 ->orderBy('order_date', 'desc')
                 ->get()
                 ->map(function ($order) {
-                    // Transform order data for frontend
                     return [
                         'order_id' => $order->order_id,
                         'tracking_number' => $order->tracking_number,
@@ -272,7 +253,20 @@ class OrderController extends Controller
                         'order_status' => $order->order_status,
                         'payment_status' => $order->payment_status,
                         'total_items' => $order->orderDetails->sum('quantity'),
-                        'first_product_image' => $order->orderDetails->first()->inventory->color->product->colors->first()->images->first()->image_url ?? null
+                        'items' => $order->orderDetails->map(function ($detail) {
+                            $product = $detail->inventory->color->product;
+                            $color = $detail->inventory->color;
+                            return [
+                                'product_id' => $product->product_id,
+                                'product_name' => $product->name,
+                                'color_name' => $color->color_name,
+                                'size' => $detail->inventory->size,
+                                'quantity' => $detail->quantity,
+                                'unit_price' => $detail->unit_price,
+                                'subtotal' => $detail->subtotal,
+                                'image_url' => $color->images->first()->image_url ?? null
+                            ];
+                        })
                     ];
                 });
 
@@ -283,33 +277,31 @@ class OrderController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'Error retrieving order history',
+                'message' => 'Lỗi khi lấy lịch sử đơn hàng',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
-    // Trong OrderController.php
     public function getOrderDetail($orderId)
     {
         try {
             $order = Order::where('user_id', Auth::id())
                 ->where('order_id', $orderId)
                 ->with([
-                    'orderDetails.inventory.color.product', // đã có relation này
+                    'orderDetails.inventory.color.product',
                     'address',
                     'voucher'
                 ])
                 ->firstOrFail();
 
-            // Transform order details
             $orderDetails = $order->orderDetails->map(function ($detail) {
                 $product = $detail->inventory->color->product;
                 $color = $detail->inventory->color;
 
                 return [
                     'order_detail_id' => $detail->order_detail_id,
-                    'product_id' => $product->product_id, // Thêm product_id vào đây
+                    'product_id' => $product->product_id,
                     'product_name' => $product->name,
                     'color_name' => $color->color_name,
                     'size' => $detail->inventory->size,
@@ -344,12 +336,11 @@ class OrderController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'Error retrieving order detail',
+                'message' => 'Lỗi khi lấy chi tiết đơn hàng',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
-    // Thêm vào OrderController.php
 
     public function cancelOrder($orderId)
     {
@@ -362,7 +353,7 @@ class OrderController extends Controller
             if (!$order) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Order not found or cannot be cancelled'
+                    'message' => 'Không tìm thấy đơn hàng hoặc không thể hủy'
                 ], 404);
             }
 
@@ -372,17 +363,16 @@ class OrderController extends Controller
 
             return response()->json([
                 'status' => true,
-                'message' => 'Order cancelled successfully'
+                'message' => 'Hủy đơn hàng thành công'
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'Error cancelling order',
+                'message' => 'Lỗi khi hủy đơn hàng',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
-
 
     public function confirmDelivery($orderId)
     {
@@ -397,7 +387,7 @@ class OrderController extends Controller
             if (!$order) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Order not found or cannot be confirmed'
+                    'message' => 'Không tìm thấy đơn hàng hoặc không thể xác nhận'
                 ], 404);
             }
 
@@ -410,15 +400,15 @@ class OrderController extends Controller
 
             return response()->json([
                 'status' => true,
-                'message' => 'Delivery confirmed successfully'
+                'message' => 'Xác nhận giao hàng thành công'
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error confirming delivery: ' . $e->getMessage());
+            Log::error('Lỗi khi xác nhận giao hàng: ' . $e->getMessage());
 
             return response()->json([
                 'status' => false,
-                'message' => 'Error confirming delivery',
+                'message' => 'Lỗi khi xác nhận giao hàng',
                 'error' => $e->getMessage()
             ], 500);
         }

@@ -15,11 +15,12 @@ class CategoryController extends Controller
     public function index(Request $request)
     {
         try {
-            // Thêm log để ghi lại thông tin chi tiết
             Log::info('Bắt đầu lấy danh sách danh mục');
 
             $query = Category::whereNull('parent_category_id')
-                ->with('children');
+                ->with(['children' => function ($query) {
+                    $query->with('children');
+                }]);
 
             if ($request->has('search')) {
                 $search = $request->search;
@@ -28,7 +29,6 @@ class CategoryController extends Controller
 
             $categories = $query->orderBy('display_order')->get();
 
-            // Log số lượng danh mục
             Log::info('Số lượng danh mục: ' . $categories->count());
 
             return response()->json([
@@ -36,7 +36,6 @@ class CategoryController extends Controller
                 'data' => $categories
             ]);
         } catch (\Exception $e) {
-            // Ghi log lỗi chi tiết
             Log::error('Lỗi khi lấy danh sách danh mục: ' . $e->getMessage());
             Log::error('Chi tiết lỗi: ' . $e->getTraceAsString());
 
@@ -53,7 +52,9 @@ class CategoryController extends Controller
     {
         try {
             $categories = Category::where('is_active', true)
-                ->with('children')
+                ->with(['children' => function ($query) {
+                    $query->with('children');
+                }])
                 ->whereNull('parent_category_id')
                 ->orderBy('display_order')
                 ->get();
@@ -114,7 +115,6 @@ class CategoryController extends Controller
 
             DB::beginTransaction();
 
-            // Xử lý hình ảnh nếu có
             $imagePath = null;
             if ($request->hasFile('image')) {
                 $image = $request->file('image');
@@ -123,7 +123,6 @@ class CategoryController extends Controller
                 $imagePath = '/storage/categories/' . $imageName;
             }
 
-            // Tính level của danh mục
             $level = 0;
             if ($request->parent_category_id) {
                 $parentCategory = Category::find($request->parent_category_id);
@@ -132,7 +131,6 @@ class CategoryController extends Controller
                 }
             }
 
-            // Tạo danh mục mới
             $category = Category::create([
                 'name' => $request->name,
                 'description' => $request->description,
@@ -188,7 +186,6 @@ class CategoryController extends Controller
 
             $category = Category::findOrFail($id);
 
-            // Kiểm tra xem parent_category_id có phải là con của danh mục hiện tại không
             if ($request->parent_category_id) {
                 $isValidParent = !$this->isChildCategory($id, $request->parent_category_id);
 
@@ -200,9 +197,7 @@ class CategoryController extends Controller
                 }
             }
 
-            // Xử lý hình ảnh nếu có
             if ($request->hasFile('image')) {
-                // Xóa hình ảnh cũ nếu có
                 if ($category->image_url) {
                     $oldPath = str_replace('/storage', 'public', $category->image_url);
                     if (Storage::exists($oldPath)) {
@@ -210,14 +205,12 @@ class CategoryController extends Controller
                     }
                 }
 
-                // Lưu hình ảnh mới
                 $image = $request->file('image');
                 $imageName = time() . '.' . $image->getClientOriginalExtension();
                 $image->storeAs('public/categories', $imageName);
                 $category->image_url = '/storage/categories/' . $imageName;
             }
 
-            // Tính level của danh mục
             $level = 0;
             if ($request->parent_category_id) {
                 $parentCategory = Category::find($request->parent_category_id);
@@ -226,7 +219,6 @@ class CategoryController extends Controller
                 }
             }
 
-            // Cập nhật thông tin danh mục
             $category->name = $request->name;
             $category->description = $request->description;
             $category->parent_category_id = $request->parent_category_id;
@@ -237,7 +229,6 @@ class CategoryController extends Controller
             $category->meta_description = $request->meta_description;
             $category->save();
 
-            // Cập nhật level cho tất cả danh mục con nếu parent_category_id thay đổi
             if ($category->wasChanged('parent_category_id')) {
                 $this->updateChildrenLevels($category);
             }
@@ -267,7 +258,6 @@ class CategoryController extends Controller
 
             $category = Category::findOrFail($id);
 
-            // Kiểm tra xem danh mục có chứa sản phẩm hoặc danh mục con không
             $hasProducts = $category->products()->exists();
             $hasChildren = $category->children()->exists();
 
@@ -285,7 +275,6 @@ class CategoryController extends Controller
                 ], 422);
             }
 
-            // Xóa hình ảnh liên kết nếu có
             if ($category->image_url) {
                 $imagePath = str_replace('/storage', 'public', $category->image_url);
                 if (Storage::exists($imagePath)) {
@@ -336,7 +325,6 @@ class CategoryController extends Controller
         }
     }
 
-    // Hàm kiểm tra xem một danh mục có phải là con của một danh mục khác không
     private function isChildCategory($parentId, $childId)
     {
         $childCategory = Category::find($childId);
@@ -356,7 +344,6 @@ class CategoryController extends Controller
         return false;
     }
 
-    // Hàm cập nhật level cho tất cả danh mục con
     private function updateChildrenLevels($category)
     {
         $children = Category::where('parent_category_id', $category->category_id)->get();
@@ -368,6 +355,7 @@ class CategoryController extends Controller
             $this->updateChildrenLevels($child);
         }
     }
+
     public function getCategories()
     {
         $categories = Category::whereNull('parent_category_id')

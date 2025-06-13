@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { formatVND } from '@/Utils/format';
 import axios from 'axios';
 import ReviewModal from '@/Components/Reviews/ReviewModal';
@@ -24,11 +24,11 @@ export default function OrderDetail({ auth, orderId }) {
             if (response.data.status) {
                 setOrder(response.data.data);
             } else {
-                setError('Failed to load order details');
+                setError('Không thể tải chi tiết đơn hàng');
             }
         } catch (error) {
-            console.error('Error fetching order detail:', error);
-            setError(error.response?.data?.message || 'An error occurred while loading order details');
+            console.error('Lỗi khi lấy chi tiết đơn hàng:', error);
+            setError(error.response?.data?.message || 'Đã xảy ra lỗi khi tải chi tiết đơn hàng');
         } finally {
             setLoading(false);
         }
@@ -43,8 +43,8 @@ export default function OrderDetail({ auth, orderId }) {
                 alert(response.data.message);
             }
         } catch (error) {
-            console.error('Error cancelling order:', error);
-            alert(error.response?.data?.message || 'Failed to cancel order');
+            console.error('Lỗi khi hủy đơn hàng:', error);
+            alert(error.response?.data?.message || 'Không thể hủy đơn hàng');
         }
     };
 
@@ -58,8 +58,8 @@ export default function OrderDetail({ auth, orderId }) {
                 alert(response.data.message);
             }
         } catch (error) {
-            console.error('Error confirming delivery:', error);
-            alert(error.response?.data?.message || 'Failed to confirm delivery');
+            console.error('Lỗi khi xác nhận giao hàng:', error);
+            alert(error.response?.data?.message || 'Không thể xác nhận giao hàng');
         }
     };
 
@@ -98,7 +98,7 @@ export default function OrderDetail({ auth, orderId }) {
         return (
             <AuthenticatedLayout user={auth.user}>
                 <div className="flex items-center justify-center min-h-screen">
-                    <div>Order not found</div>
+                    <div>Không tìm thấy đơn hàng</div>
                 </div>
             </AuthenticatedLayout>
         );
@@ -106,7 +106,7 @@ export default function OrderDetail({ auth, orderId }) {
 
     return (
         <AuthenticatedLayout user={auth.user}>
-            <Head title={`Order #${order.order.tracking_number}`} />
+            <Head title={`Đơn hàng #${order.order.tracking_number}`} />
             
             <div className="py-12">
                 <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
@@ -114,10 +114,14 @@ export default function OrderDetail({ auth, orderId }) {
                         <div className="mb-6 flex justify-between items-start">
                             <div>
                                 <h1 className="text-2xl font-bold">
-                                    Order #{order.order.tracking_number}
+                                    Đơn hàng #{order.order.tracking_number}
                                 </h1>
                                 <div className={`text-lg font-semibold ${getStatusColor(order.order.order_status)}`}>
-                                    {order.order.order_status}
+                                    {order.order.order_status === 'PENDING' ? 'Chờ xác nhận' :
+                                     order.order.order_status === 'CONFIRMED' ? 'Đã xác nhận' :
+                                     order.order.order_status === 'DELIVERING' ? 'Đang giao' :
+                                     order.order.order_status === 'COMPLETED' ? 'Hoàn thành' :
+                                     order.order.order_status === 'CANCELLED' ? 'Đã hủy' : order.order.order_status}
                                 </div>
                             </div>
 
@@ -127,7 +131,7 @@ export default function OrderDetail({ auth, orderId }) {
                                         onClick={handleCancelOrder}
                                         className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition duration-150"
                                     >
-                                        Cancel Order
+                                        Hủy đơn hàng
                                     </button>
                                 )}
                                 {order.order.order_status === 'DELIVERING' && (
@@ -135,7 +139,7 @@ export default function OrderDetail({ auth, orderId }) {
                                         onClick={handleConfirmDelivery}
                                         className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition duration-150"
                                     >
-                                        Confirm Delivery
+                                        Xác nhận giao hàng
                                     </button>
                                 )}
                             </div>
@@ -143,16 +147,16 @@ export default function OrderDetail({ auth, orderId }) {
 
                         <div className="grid md:grid-cols-2 gap-6">
                             <div>
-                                <h2 className="text-xl font-semibold mb-4">Order Details</h2>
+                                <h2 className="text-xl font-semibold mb-4">Chi tiết đơn hàng</h2>
                                 <div className="space-y-2">
-                                    <p>Order Date: {new Date(order.order.order_date).toLocaleString()}</p>
-                                    <p>Payment Method: {order.order.payment_method}</p>
-                                    <p>Payment Status: {order.order.payment_status}</p>
+                                    <p>Ngày đặt hàng: {new Date(order.order.order_date).toLocaleString('vi-VN')}</p>
+                                    <p>Phương thức thanh toán: {order.order.payment_method === 'COD' ? 'Thanh toán khi nhận hàng' : 'VNPay'}</p>
+                                    <p>Trạng thái thanh toán: {order.order.payment_status === 'PAID' ? 'Đã thanh toán' : 'Chưa thanh toán'}</p>
                                 </div>
                             </div>
 
                             <div>
-                                <h2 className="text-xl font-semibold mb-4">Shipping Address</h2>
+                                <h2 className="text-xl font-semibold mb-4">Địa chỉ giao hàng</h2>
                                 <div className="space-y-2">
                                     <p>{order.order.address.receiver_name}</p>
                                     <p>{order.order.address.phone}</p>
@@ -167,65 +171,74 @@ export default function OrderDetail({ auth, orderId }) {
                         </div>
 
                         <div className="mt-8">
-                            <h2 className="text-xl font-semibold mb-4">Order Items</h2>
-                            <div className="divide-y divide-gray-200">
+                            <h2 className="text-xl font-semibold mb-4">Sản phẩm trong đơn hàng</h2>
+                            <div className="divide-y divide-gray-200 pl-4">
                                 {order.order_details.map(item => (
-                                    <div key={item.order_detail_id} className="py-4 flex items-center space-x-4">
-                                        <img 
-                                            src={item.image_url} 
-                                            alt={item.product_name} 
-                                            className="w-20 h-20 object-cover rounded"
-                                        />
-                                        <div className="flex-grow">
-                                            <p className="font-semibold">{item.product_name}</p>
-                                            <p className="text-sm text-gray-500">
-                                                {item.color_name} | Size: {item.size}
-                                            </p>
-                                            {order.order.order_status === 'COMPLETED' && (
-                                                <button
-                                                onClick={() => {
-                                                    if (item.product_id) {  // Check if product_id exists
-                                                        setSelectedProduct({
-                                                            id: String(item.product_id), // Dùng String() thay vì toString()
-                                                            name: item.product_name || 'Unknown Product'
-                                                        });
-                                                        setReviewModalOpen(true);
-                                                    } else {
-                                                        console.error('Product ID is undefined:', item);
-                                                    }
-                                                }}
-                                                    className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
-                                                >
-                                                    Write a Review
-                                                </button>
-                                            )}
+                                    <Link
+                                        href={route('products.detail', { id: item.product_id })}
+                                        key={item.order_detail_id}
+                                        className="block py-4 hover:bg-gray-100 rounded transition"
+                                    >
+                                        <div className="flex items-center space-x-4">
+                                            <img 
+                                                src={item.image_url} 
+                                                alt={item.product_name} 
+                                                className="w-16 h-16 object-cover rounded"
+                                            />
+                                            <div className="flex-grow">
+                                                <p className="font-semibold">{item.product_name}</p>
+                                                <p className="text-sm text-gray-500">
+                                                    {item.color_name} | Kích cỡ: {item.size}
+                                                </p>
+                                                <p className="text-sm text-gray-500">
+                                                    Số lượng: {item.quantity} x {formatVND(item.unit_price)}
+                                                </p>
+                                                {order.order.order_status === 'COMPLETED' && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.preventDefault(); // Ngăn Link chuyển hướng khi click nút
+                                                            if (item.product_id) {
+                                                                setSelectedProduct({
+                                                                    id: String(item.product_id),
+                                                                    name: item.product_name || 'Sản phẩm không xác định'
+                                                                });
+                                                                setReviewModalOpen(true);
+                                                            } else {
+                                                                console.error('Product ID không xác định:', item);
+                                                            }
+                                                        }}
+                                                        className="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
+                                                    >
+                                                        Viết đánh giá
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="font-semibold">{formatVND(item.subtotal)}</p>
+                                            </div>
                                         </div>
-                                        <div className="text-right">
-                                            <p>{formatVND(item.unit_price)} x {item.quantity}</p>
-                                            <p className="font-semibold">{formatVND(item.subtotal)}</p>
-                                        </div>
-                                    </div>
+                                    </Link>
                                 ))}
                             </div>
                         </div>
 
                         <div className="mt-8 border-t pt-4">
                             <div className="flex justify-between">
-                                <p>Subtotal</p>
+                                <p>Tạm tính</p>
                                 <p>{formatVND(order.order.subtotal_amount)}</p>
                             </div>
                             <div className="flex justify-between">
-                                <p>Shipping Fee</p>
+                                <p>Phí vận chuyển</p>
                                 <p>{formatVND(order.order.shipping_fee)}</p>
                             </div>
                             {order.order.discount_amount > 0 && (
                                 <div className="flex justify-between text-green-600">
-                                    <p>Discount</p>
+                                    <p>Giảm giá</p>
                                     <p>-{formatVND(order.order.discount_amount)}</p>
                                 </div>
                             )}
                             <div className="flex justify-between font-bold text-xl mt-4">
-                                <p>Total</p>
+                                <p>Tổng cộng</p>
                                 <p>{formatVND(order.order.final_amount)}</p>
                             </div>
                         </div>
@@ -254,7 +267,7 @@ export default function OrderDetail({ auth, orderId }) {
                         <div className="fixed inset-0 flex items-center justify-center p-4">
                             <Dialog.Panel className="w-full max-w-sm rounded bg-white p-6">
                                 <Dialog.Title className="text-lg font-medium mb-4">
-                                    Would you like to review the products?
+                                    Bạn có muốn đánh giá sản phẩm?
                                 </Dialog.Title>
                                 
                                 <div className="flex justify-end space-x-2">
@@ -262,7 +275,7 @@ export default function OrderDetail({ auth, orderId }) {
                                         onClick={() => setConfirmationDialogOpen(false)}
                                         className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
                                     >
-                                        Maybe Later
+                                        Để sau
                                     </button>
                                     <button
                                         onClick={() => {
@@ -275,7 +288,7 @@ export default function OrderDetail({ auth, orderId }) {
                                         }}
                                         className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
                                     >
-                                        Write a Review
+                                        Viết đánh giá
                                     </button>
                                 </div>
                             </Dialog.Panel>
