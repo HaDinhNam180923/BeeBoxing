@@ -4,16 +4,18 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Models\DeliveryOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class OrderManageController extends Controller
 {
     public function index(Request $request)
     {
         try {
-            $query = Order::with(['user', 'address', 'orderDetails.inventory.color.product']);
+            $query = Order::with(['user', 'address', 'orderDetails.inventory.color.product', 'deliveryOrder']);
 
             if ($request->has('status') && $request->status != 'all') {
                 $query->where('order_status', $request->status);
@@ -62,6 +64,7 @@ class OrderManageController extends Controller
                 'user',
                 'address',
                 'voucher',
+                'deliveryOrder', // Load delivery order
                 'orderDetails.inventory.color' => function ($query) {
                     $query->with(['images', 'product']);
                 }
@@ -85,7 +88,7 @@ class OrderManageController extends Controller
     {
         try {
             $request->validate([
-                'order_status' => 'required|in:PENDING,CONFIRMED,DELIVERING,COMPLETED,CANCELLED',
+                'order_status' => 'required|in:CONFIRMED,CANCELLED', // Chỉ cho phép CONFIRMED và CANCELLED
             ]);
 
             DB::beginTransaction();
@@ -101,14 +104,10 @@ class OrderManageController extends Controller
                 ], 422);
             }
 
-            if ($newStatus === 'CANCELLED' && ($oldStatus === 'PENDING' || $oldStatus === 'CONFIRMED')) {
+            if ($newStatus === 'CANCELLED' && $oldStatus === 'PENDING') {
                 foreach ($order->orderDetails as $detail) {
                     $detail->inventory->increment('stock_quantity', $detail->quantity);
                 }
-            }
-
-            if ($newStatus === 'COMPLETED' && $order->payment_method === 'COD') {
-                $order->payment_status = 'PAID';
             }
 
             $order->order_status = $newStatus;
@@ -118,6 +117,7 @@ class OrderManageController extends Controller
                 'user',
                 'address',
                 'voucher',
+                'deliveryOrder',
                 'orderDetails.inventory.color' => function ($query) {
                     $query->with(['images', 'product']);
                 }
@@ -144,14 +144,62 @@ class OrderManageController extends Controller
     private function validateStatusTransition($oldStatus, $newStatus)
     {
         $validTransitions = [
-            'PENDING' => ['CONFIRMED', 'CANCELLED'],
-            'CONFIRMED' => ['DELIVERING', 'CANCELLED'],
-            'DELIVERING' => ['COMPLETED', 'CANCELLED'],
-            'COMPLETED' => [],
-            'CANCELLED' => []
+            'PENDING' => ['CONFIRMED', 'CANCELLED'], // Chỉ cho phép từ PENDING
         ];
 
         return in_array($newStatus, $validTransitions[$oldStatus] ?? []);
+    }
+
+    public function createDeliveryOrder($orderId)
+    {
+        try {
+            $order = Order::findOrFail($orderId);
+            if ($order->order_status !== 'CONFIRMED') {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Chỉ có thể tạo đơn giao cho đơn hàng đã xác nhận'
+                ], 422);
+            }
+
+            if ($order->deliveryOrder) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Đơn hàng đã có đơn giao'
+                ], 422);
+            }
+
+            DB::beginTransaction();
+
+            // Sinh mã vận đơn tự động
+            $trackingNumber = 'SHP' . now()->format('YmdHis') . mt_rand(1000, 9999);
+            while (DeliveryOrder::where('tracking_number', $trackingNumber)->exists()) {
+                $trackingNumber = 'SHP' . now()->format('YmdHis') . mt_rand(1000, 9999);
+            }
+
+            $deliveryOrder = DeliveryOrder::create([
+                'order_id' => $orderId,
+                'tracking_number' => $trackingNumber,
+                'status' => 'created',
+            ]);
+
+            $order->load(['deliveryOrder']);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Tạo đơn giao thành công',
+                'data' => $order
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Lỗi khi tạo đơn giao: ' . $e->getMessage());
+            return response()->json([
+                'status' => false,
+                'message' => 'Lỗi khi tạo đơn giao',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function statistics()
@@ -167,7 +215,7 @@ class OrderManageController extends Controller
                 'revenue' => Order::where('order_status', 'COMPLETED')
                     ->where('payment_status', 'PAID')
                     ->sum('final_amount'),
-                'recent_orders' => Order::with(['user', 'orderDetails.inventory.color.product'])
+                'recent_orders' => Order::with(['user', 'orderDetails.inventory.color.product', 'deliveryOrder'])
                     ->orderBy('order_date', 'desc')
                     ->limit(5)
                     ->get()

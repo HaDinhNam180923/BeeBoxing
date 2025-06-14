@@ -2,17 +2,13 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\API\ProductController;  // Đảm bảo namespace chính xác
-// use App\Http\Controllers\API\CategoryController;
+use App\Http\Controllers\API\ProductController;
 use App\Http\Controllers\Admin\CategoryController;
-// use App\Http\Controllers\API\VoucherController;
 use App\Http\Controllers\Admin\VoucherController;
 use App\Http\Controllers\Admin\OrderManageController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\API\SlideController;
-
 use App\Http\Controllers\Admin\SalesReportController;
-
 
 // Route để lấy sản phẩm đã xem gần đây
 Route::get('/products/recently-viewed', [ProductController::class, 'getRecentlyViewedProducts']);
@@ -26,7 +22,6 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/admin/slides/{id}', [SlideController::class, 'update']);
     Route::delete('/admin/slides/{id}', [SlideController::class, 'destroy']);
 });
-// Thêm vào nhóm route middleware(['auth']) trong file api.php
 
 // Category API
 Route::prefix('admin/categories')->group(function () {
@@ -52,30 +47,26 @@ Route::prefix('admin/vouchers')->group(function () {
 // User search API (for assigning vouchers to specific users)
 Route::get('admin/users/search', [UserController::class, 'search']);
 
-//product
+// Product
 Route::post('/product/create', [ProductController::class, 'createProduct']);
 Route::post('/product/images/create', [ProductController::class, 'createProductImages']);
 Route::delete('/product/delete/{id}', [ProductController::class, 'deleteProduct']);
 Route::get('/products', [ProductController::class, 'getProducts']);
 Route::get('products/{id}', [ProductController::class, 'getProductDetail']);
-// Thêm vào nhóm routes API hiện có
 Route::get('/product/{id}', [ProductController::class, 'getProductForEdit']);
 Route::post('/product/{id}/update', [ProductController::class, 'updateProduct']);
 Route::get('/products/{id}/also-bought', [ProductController::class, 'getAlsoBoughtProducts']);
 
-//category
+// Category
 Route::get('/categories', [CategoryController::class, 'getCategories']);
-// Thêm route mới trong api.php
 Route::get('/product/{id}/test', [ProductController::class, 'testProductDetail']);
 
-
-Route::middleware('auth')->group(function () {
-    // Thêm prefix 'api' vào routes để match với đường dẫn frontend đang gọi
-    Route::prefix('api')->group(function () {
-        Route::get('/admin/orders', [App\Http\Controllers\Admin\OrderManageController::class, 'index']);
-        Route::get('/admin/orders/{id}', [App\Http\Controllers\Admin\OrderManageController::class, 'show']);
-        Route::put('/admin/orders/{id}/status', [App\Http\Controllers\Admin\OrderManageController::class, 'updateStatus']);
-    });
+// Order routes
+Route::prefix('admin')->group(function () {
+    Route::get('/orders', [OrderManageController::class, 'index']);
+    Route::get('/orders/{id}', [OrderManageController::class, 'show']);
+    Route::put('/orders/{id}/status', [OrderManageController::class, 'updateStatus']);
+    Route::post('/orders/{id}/delivery', [OrderManageController::class, 'createDeliveryOrder']);
 });
 
 // Admin Collection routes
@@ -100,3 +91,5 @@ Route::prefix('admin/sales')->group(function () {
     Route::get('/overview', [SalesReportController::class, 'getOverview']);
     Route::get('/daily', [SalesReportController::class, 'getDailyReport']);
 });
+Route::delete('/product/image/{imageId}', [ProductController::class, 'deleteProductImage'])->name('product.image.delete');
+Route::get('/categories/{id}/ancestors', [App\Http\Controllers\API\CategoryController::class, 'getCategoryAncestors']);

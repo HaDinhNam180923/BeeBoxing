@@ -472,16 +472,17 @@ class ProductController extends Controller
             'category_id' => 'required|exists:categories,category_id',
             'brand' => 'required|string|max:255',
             'discount' => 'nullable|numeric|min:0|max:100',
-            'specifications' => 'nullable|json',
+            'specifications' => 'nullable|string', // Kiểm tra chuỗi JSON
             'is_featured' => 'boolean',
             'colors' => 'required|array|min:1',
             'colors.*.color_id' => 'nullable|exists:product_colors,color_id',
             'colors.*.color_name' => 'required|string|max:255',
             'colors.*.color_code' => 'required|string|max:255',
             'colors.*.sizes' => 'required|array|min:1',
+            'colors.*.sizes.*.inventory_id' => 'nullable|exists:product_inventory,inventory_id',
             'colors.*.sizes.*.size' => 'required|string|max:255',
             'colors.*.sizes.*.stock_quantity' => 'required|integer|min:0',
-            'colors.*.sizes.*.price_adjustment' => 'nullable|numeric'
+            'colors.*.sizes.*.price_adjustment' => 'nullable'
         ]);
 
         if ($validator->fails()) {
@@ -495,6 +496,23 @@ class ProductController extends Controller
         try {
             DB::beginTransaction();
 
+            // Kiểm tra specifications là JSON hợp lệ
+            $specifications = $request->specifications;
+            if ($specifications) {
+                try {
+                    json_decode($specifications, true);
+                    if (json_last_error() !== JSON_ERROR_NONE) {
+                        throw new \Exception('Invalid JSON format for specifications');
+                    }
+                } catch (\Exception $e) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Invalid specifications format',
+                        'error' => $e->getMessage()
+                    ], 422);
+                }
+            }
+
             // Update product basic info
             $product = Product::findOrFail($id);
             $product->update([
@@ -504,7 +522,7 @@ class ProductController extends Controller
                 'category_id' => $request->category_id,
                 'brand' => $request->brand,
                 'discount' => $request->discount ?? 0,
-                'specifications' => $request->specifications,
+                'specifications' => $specifications,
                 'is_featured' => $request->is_featured ?? false
             ]);
 
@@ -518,6 +536,14 @@ class ProductController extends Controller
             // Delete colors that are not in the update request
             $deletedColorIds = array_diff($existingColorIds, $updatedColorIds);
             if (!empty($deletedColorIds)) {
+                // Lấy ảnh liên quan để xóa file vật lý
+                $imagesToDelete = ProductImage::whereIn('color_id', $deletedColorIds)->get();
+                foreach ($imagesToDelete as $image) {
+                    $path = str_replace('/storage', 'public', $image->image_url);
+                    if (Storage::exists($path)) {
+                        Storage::delete($path);
+                    }
+                }
                 ProductColor::whereIn('color_id', $deletedColorIds)->delete();
             }
 
@@ -525,7 +551,7 @@ class ProductController extends Controller
             foreach ($request->colors as $colorData) {
                 if (isset($colorData['color_id'])) {
                     // Update existing color
-                    $color = ProductColor::find($colorData['color_id']);
+                    $color = ProductColor::findOrFail($colorData['color_id']);
                     $color->update([
                         'color_name' => $colorData['color_name'],
                         'color_code' => $colorData['color_code']
@@ -541,9 +567,12 @@ class ProductController extends Controller
 
                 // Get existing size IDs for this color
                 $existingSizeIds = $color->inventory->pluck('inventory_id')->toArray();
+                $updatedSizeIds = collect($colorData['sizes'])
+                    ->pluck('inventory_id')
+                    ->filter()
+                    ->toArray();
 
-                // Create or update sizes
-                $newSizeIds = [];
+                // Update or create sizes
                 foreach ($colorData['sizes'] as $sizeData) {
                     if (isset($sizeData['inventory_id'])) {
                         // Update existing size
@@ -553,21 +582,19 @@ class ProductController extends Controller
                                 'stock_quantity' => $sizeData['stock_quantity'],
                                 'price_adjustment' => $sizeData['price_adjustment'] ?? 0
                             ]);
-                        $newSizeIds[] = $sizeData['inventory_id'];
                     } else {
                         // Create new size
-                        $inventory = ProductInventory::create([
+                        ProductInventory::create([
                             'color_id' => $color->color_id,
                             'size' => $sizeData['size'],
                             'stock_quantity' => $sizeData['stock_quantity'],
                             'price_adjustment' => $sizeData['price_adjustment'] ?? 0
                         ]);
-                        $newSizeIds[] = $inventory->inventory_id;
                     }
                 }
 
                 // Delete sizes that are not in the update
-                $deletedSizeIds = array_diff($existingSizeIds, $newSizeIds);
+                $deletedSizeIds = array_diff($existingSizeIds, $updatedSizeIds);
                 if (!empty($deletedSizeIds)) {
                     ProductInventory::whereIn('inventory_id', $deletedSizeIds)->delete();
                 }
@@ -585,6 +612,7 @@ class ProductController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Error updating product:', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to update product',
@@ -911,5 +939,49 @@ class ProductController extends Controller
         });
 
         return $products;
+    }
+    public function deleteProductImage($imageId)
+    {
+        try {
+            DB::beginTransaction();
+
+            // Tìm ảnh theo image_id
+            $image = ProductImage::find($imageId);
+            if (!$image) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Image not found'
+                ], 404);
+            }
+
+            // Lưu đường dẫn file để xóa sau
+            $imagePath = str_replace('/storage', 'public', $image->image_url);
+
+            // Xóa bản ghi ảnh trong database
+            $image->delete();
+
+            // Xóa file ảnh vật lý
+            if (Storage::exists($imagePath)) {
+                Storage::delete($imagePath);
+                Log::info('Deleted image file', ['path' => $imagePath]);
+            } else {
+                Log::warning('Image file not found', ['path' => $imagePath]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Image deleted successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error deleting product image:', ['error' => $e->getMessage(), 'image_id' => $imageId]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete image',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }

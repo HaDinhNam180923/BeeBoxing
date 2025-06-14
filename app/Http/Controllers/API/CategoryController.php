@@ -5,10 +5,10 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Category;
+use Illuminate\Support\Str;
 
 class CategoryController extends Controller
 {
-
     public function getCategories()
     {
         $categories = Category::whereNull('parent_category_id')
@@ -45,5 +45,33 @@ class CategoryController extends Controller
         }
 
         return $result;
+    }
+
+    public function getCategoryAncestors($categoryId)
+    {
+        try {
+            $ancestors = [];
+            $category = Category::findOrFail($categoryId);
+
+            while ($category) {
+                $ancestors[] = [
+                    'id' => $category->category_id,
+                    'name' => $category->name,
+                    'slug' => $category->slug ?? Str::slug($category->name),
+                ];
+                $category = $category->parent_category_id ? Category::find($category->parent_category_id) : null;
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'data' => array_reverse($ancestors)
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to retrieve category ancestors',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }

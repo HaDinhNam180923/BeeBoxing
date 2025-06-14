@@ -28,6 +28,7 @@ class DeliveryOrder extends Model
         'received_at',
         'delivered_at',
         'notes',
+        'proof_image', // Thêm trường mới
     ];
 
     /**

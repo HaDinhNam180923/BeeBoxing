@@ -8,13 +8,13 @@ use Illuminate\Support\Facades\Log;
 class VNPayService
 {
     /**
-     * Tạo URL thanh toán VNPay với QR code
+     * Tạo URL thanh toán VNPay cho thanh toán thẻ
      * 
      * @param Order $order Đơn hàng cần thanh toán
-     * @param string|null $bankCode Mã ngân hàng (tùy chọn)
+     * @param string $bankCode Mã ngân hàng (mặc định NCB trong sandbox)
      * @return string URL thanh toán VNPay
      */
-    public function createPaymentUrl($order, $bankCode = null)
+    public function createPaymentUrl($order, $bankCode = 'NCB')
     {
         $vnp_TmnCode = config('vnpay.tmn_code');
         $vnp_HashSecret = config('vnpay.hash_secret');
@@ -37,43 +37,73 @@ class VNPayService
             "vnp_IpAddr" => request()->ip(),
             "vnp_Locale" => "vn",
             "vnp_OrderInfo" => $vnp_OrderInfo,
-            "vnp_OrderType" => "other",
+            "vnp_OrderType" => "billpayment",
             "vnp_ReturnUrl" => $vnp_ReturnUrl,
             "vnp_TxnRef" => $vnp_TxnRef,
-            "vnp_ExpireDate" => date('YmdHis', strtotime('+15 minutes')), // URL hết hạn sau 15 phút
+            "vnp_ExpireDate" => date('YmdHis', strtotime('+15 minutes')),
+            "vnp_BankCode" => $bankCode,
         ];
 
-        // Thêm bankCode nếu được chỉ định
-        if ($bankCode) {
-            $inputData["vnp_BankCode"] = $bankCode;
-        }
-
-        // Thêm phương thức thanh toán qua QR
-        $inputData["vnp_PaymentMethod"] = "QRCODE";
-
-        // Sắp xếp dữ liệu theo thứ tự a-z trước khi tạo mã hash
+        // Sắp xếp dữ liệu theo thứ tự a-z
         ksort($inputData);
 
         // Tạo chuỗi hash data
-        $hashData = "";
-        $query = "";
-        foreach ($inputData as $key => $value) {
-            if ($hashData != "") {
-                $hashData .= '&' . urlencode($key) . "=" . urlencode($value);
-                $query .= '&' . urlencode($key) . "=" . urlencode($value);
-            } else {
-                $hashData .= urlencode($key) . "=" . urlencode($value);
-                $query .= urlencode($key) . "=" . urlencode($value);
-            }
-        }
-
-        // Tạo mã hash để xác thực dữ liệu
+        $hashData = http_build_query($inputData);
         $vnp_SecureHash = hash_hmac('sha512', $hashData, $vnp_HashSecret);
 
-        // Tạo URL thanh toán hoàn chỉnh
-        $vnpayUrl = $vnp_Url . "?" . $query . '&vnp_SecureHash=' . $vnp_SecureHash;
+        // Tạo URL thanh toán
+        $vnpayUrl = $vnp_Url . "?" . http_build_query($inputData) . '&vnp_SecureHash=' . $vnp_SecureHash;
+
+        Log::info('VNPay Payment URL', ['url' => $vnpayUrl, 'order_id' => $order->order_id, 'tracking_number' => $order->tracking_number, 'input_data' => $inputData]);
 
         return $vnpayUrl;
+    }
+
+    /**
+     * Tạo dữ liệu thanh toán VNPay
+     * 
+     * @param Order $order Đơn hàng cần thanh toán
+     * @return array Dữ liệu thanh toán
+     */
+    public function createPaymentData($order)
+    {
+        $vnp_TmnCode = config('vnpay.tmn_code');
+        $vnp_HashSecret = config('vnpay.hash_secret');
+        $vnp_Url = config('vnpay.url');
+        $vnp_ReturnUrl = config('vnpay.return_url');
+
+        // Tạo thông tin thanh toán
+        $inputData = [
+            "vnp_Version" => "2.1.0",
+            "vnp_TmnCode" => $vnp_TmnCode,
+            "vnp_Amount" => (int)($order->final_amount * 100),
+            "vnp_Command" => "pay",
+            "vnp_CreateDate" => date('YmdHis'),
+            "vnp_CurrCode" => "VND",
+            "vnp_IpAddr" => request()->ip(),
+            "vnp_Locale" => "vn",
+            "vnp_OrderInfo" => "Thanh toan don hang " . $order->tracking_number,
+            "vnp_OrderType" => "billpayment",
+            "vnp_ReturnUrl" => $vnp_ReturnUrl,
+            "vnp_TxnRef" => $order->tracking_number,
+            "vnp_ExpireDate" => date('YmdHis', strtotime('+15 minutes')),
+            "vnp_BankCode" => "NCB",
+        ];
+
+        // Tạo chuỗi hash
+        ksort($inputData);
+        $hashData = http_build_query($inputData);
+        $vnp_SecureHash = hash_hmac('sha512', $hashData, $vnp_HashSecret);
+
+        Log::info('VNPay Payment Data', ['data' => $inputData, 'hash' => $vnp_SecureHash, 'order_id' => $order->order_id, 'tracking_number' => $order->tracking_number]);
+
+        return [
+            'data' => $inputData,
+            'hash' => $vnp_SecureHash,
+            'payment_url' => $vnp_Url,
+            'expire_time' => strtotime('+15 minutes') * 1000,
+            'amount' => number_format($order->final_amount, 0, ',', '.') . ' VNĐ'
+        ];
     }
 
     /**
@@ -93,24 +123,19 @@ class VNPayService
             }
         }
 
-        // Sắp xếp dữ liệu theo thứ tự a-z
         ksort($inputData);
-
-        // Tạo chuỗi hash data từ dữ liệu nhận về
-        $hashData = "";
-        foreach ($inputData as $key => $value) {
-            if ($hashData != "") {
-                $hashData .= '&' . urlencode($key) . "=" . urlencode($value);
-            } else {
-                $hashData .= urlencode($key) . "=" . urlencode($value);
-            }
-        }
-
-        // Tạo mã hash từ dữ liệu nhận về
+        $hashData = http_build_query($inputData);
         $vnp_HashSecret = config('vnpay.hash_secret');
         $secureHash = hash_hmac('sha512', $hashData, $vnp_HashSecret);
 
-        // So sánh mã hash nhận được với mã hash tạo ra
+        Log::info('VNPay Verify Return', [
+            'inputData' => $inputData,
+            'hashData' => $hashData,
+            'secureHash' => $secureHash,
+            'receivedHash' => $vnp_SecureHash,
+            'isValid' => $vnp_SecureHash === $secureHash
+        ]);
+
         return $vnp_SecureHash === $secureHash;
     }
 
@@ -135,8 +160,8 @@ class VNPayService
     public function getErrorInfo($vnpayData)
     {
         $responseCode = $vnpayData['vnp_ResponseCode'] ?? '';
-
         $errorMessages = [
+            '00' => 'Giao dịch thành công',
             '01' => 'Giao dịch đã tồn tại',
             '02' => 'Merchant không hợp lệ',
             '03' => 'Dữ liệu gửi sang không đúng định dạng',
@@ -151,49 +176,16 @@ class VNPayService
             '51' => 'Giao dịch không thành công do: Tài khoản của quý khách không đủ số dư để thực hiện giao dịch',
             '65' => 'Giao dịch không thành công do: Tài khoản của Quý khách đã vượt quá hạn mức giao dịch trong ngày',
             '75' => 'Ngân hàng thanh toán đang bảo trì',
+            '76' => 'Ngân hàng không hỗ trợ giao dịch này',
             '79' => 'Giao dịch không thành công do: KH nhập sai mật khẩu thanh toán quá số lần quy định',
             '99' => 'Các lỗi khác',
         ];
 
+        Log::info('VNPay Response', ['code' => $responseCode, 'message' => $errorMessages[$responseCode] ?? 'Lỗi không xác định', 'data' => $vnpayData]);
+
         return [
             'code' => $responseCode,
             'message' => $errorMessages[$responseCode] ?? 'Lỗi không xác định'
-        ];
-    }
-    public function createPaymentData($order)
-    {
-        $vnp_TmnCode = config('vnpay.tmn_code');
-        $vnp_HashSecret = config('vnpay.hash_secret');
-        $vnp_Url = "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html";
-
-        // Tạo thông tin thanh toán
-        $inputData = [
-            "vnp_Version" => "2.1.0",
-            "vnp_TmnCode" => $vnp_TmnCode,
-            "vnp_Amount" => $order->final_amount * 100,
-            "vnp_Command" => "pay",
-            "vnp_CreateDate" => date('YmdHis'),
-            "vnp_CurrCode" => "VND",
-            "vnp_IpAddr" => request()->ip(),
-            "vnp_Locale" => "vn",
-            "vnp_OrderInfo" => "Thanh toan don hang " . $order->tracking_number,
-            "vnp_OrderType" => "billpayment",
-            "vnp_ReturnUrl" => route('payment.vnpay.return'),
-            "vnp_TxnRef" => $order->tracking_number,
-            "vnp_ExpireDate" => date('YmdHis', strtotime('+15 minutes')),
-        ];
-
-        // Tạo chuỗi hash
-        ksort($inputData);
-        $hashdata = http_build_query($inputData);
-        $vnpSecureHash = hash_hmac('sha512', $hashdata, $vnp_HashSecret);
-
-        return [
-            'data' => $inputData,
-            'hash' => $vnpSecureHash,
-            'payment_url' => $vnp_Url,
-            'expire_time' => strtotime('+15 minutes') * 1000, // Chuyển đổi sang milliseconds
-            'amount' => number_format($order->final_amount, 0, ',', '.') . ' VNĐ'
         ];
     }
 }

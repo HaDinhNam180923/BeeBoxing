@@ -16,7 +16,7 @@ export default function Success({ order }) {
                         Thanh toán thành công!
                     </h1>
                     <p className="text-gray-600 mb-8">
-                        Cảm ơn bạn đã đặt hàng. Mã đơn hàng của bạn là: {order?.tracking_number}
+                        Cảm ơn bạn đã đặt hàng. Mã đơn hàng của bạn là: {order?.tracking_number || 'N/A'}
                     </p>
                     <Link
                         href="/dashboard"

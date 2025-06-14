@@ -76,6 +76,10 @@ const VoucherList = () => {
     }
   };
 
+  const renderVoucherType = (voucher) => {
+    return voucher.voucher_type === 'price' ? 'Giảm giá đơn hàng' : 'Giảm phí vận chuyển';
+  };
+
   const renderVoucherStatus = (voucher) => {
     const now = new Date();
     const startDate = new Date(voucher.start_date);
@@ -92,6 +96,16 @@ const VoucherList = () => {
     } else {
       return <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Đang hoạt động</span>;
     }
+  };
+
+  const renderVoucherScope = (voucher) => {
+    const isPublic = Boolean(voucher.is_public);
+    const isNewUserOnly = Boolean(voucher.is_new_user_only);
+    let scopeText = isPublic ? 'Công khai' : 'Riêng tư';
+    if (isNewUserOnly) {
+      scopeText += ', Chỉ người mới';
+    }
+    return scopeText;
   };
 
   return (
@@ -143,48 +157,54 @@ const VoucherList = () => {
           <div className="loader">Loading...</div>
         </div>
       ) : (
-        <div className="shadow overflow-hidden border-b border-gray-200 sm:rounded-lg">
+        <div className="shadow overflow-x-auto border-b border-gray-200 sm:rounded-lg max-w-full">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12"
                 >
                   Mã
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12"
                 >
                   Tên
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12"
+                >
+                  Loại
+                </th>
+                <th
+                  scope="col"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12"
                 >
                   Giảm giá
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12"
                 >
                   Thời gian
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12"
                 >
                   Sử dụng
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12"
                 >
                   Trạng thái
                 </th>
-                <th scope="col" className="relative px-6 py-3">
-                  <span className="sr-only">Actions</span>
+                <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12">
+                  Hành động
                 </th>
               </tr>
             </thead>
@@ -192,21 +212,26 @@ const VoucherList = () => {
               {vouchers.length > 0 ? (
                 vouchers.map((voucher) => (
                   <tr key={voucher.voucher_id}>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
                         {voucher.code}
                       </div>
-                      <div className="text-sm text-gray-500">
-                        {voucher.is_public ? 'Công khai' : 'Riêng tư'}
+                      <div className="text-sm text-gray-500 truncate max-w-[100px]">
+                        {renderVoucherScope(voucher)}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-900">{voucher.name}</div>
-                      <div className="text-sm text-gray-500 truncate max-w-[200px]">
+                    <td className="px-4 py-4">
+                      <div className="text-sm text-gray-900 truncate max-w-[150px]">
+                        {voucher.name}
+                      </div>
+                      <div className="text-sm text-gray-500 truncate max-w-[150px]">
                         {voucher.description || 'Không có mô tả'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {renderVoucherType(voucher)}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
                         {formatDiscountValue(voucher)}
                       </div>
@@ -217,7 +242,7 @@ const VoucherList = () => {
                         Giảm tối đa: {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(voucher.maximum_discount_amount)}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">
                         Từ: {format(new Date(voucher.start_date), 'dd/MM/yyyy', { locale: vi })}
                       </div>
@@ -225,22 +250,22 @@ const VoucherList = () => {
                         Đến: {format(new Date(voucher.end_date), 'dd/MM/yyyy', { locale: vi })}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                       {voucher.used_count} / {voucher.usage_limit}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       {renderVoucherStatus(voucher)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <Link
                         href={route('admin.vouchers.edit', voucher.voucher_id)}
-                        className="text-indigo-600 hover:text-indigo-900 mr-4"
+                        className="text-indigo-600 hover:text-indigo-900 mr-3"
                       >
                         Sửa
                       </Link>
                       <button
                         onClick={() => toggleVoucherStatus(voucher)}
-                        className={`mr-4 ${
+                        className={`mr-3 ${
                           voucher.is_active
                             ? 'text-yellow-600 hover:text-yellow-900'
                             : 'text-green-600 hover:text-green-900'
@@ -259,7 +284,7 @@ const VoucherList = () => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7" className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan="8" className="px-4 py-4 text-center text-gray-500">
                     Không có mã giảm giá nào
                   </td>
                 </tr>

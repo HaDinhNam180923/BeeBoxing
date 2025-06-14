@@ -10,23 +10,42 @@ export default function Checkout({ selectedItems }) {
     const [paymentMethod, setPaymentMethod] = useState('COD');
     const [selectedAddress, setSelectedAddress] = useState(null);
     const [orderNote, setOrderNote] = useState('');
-    const [selectedVoucher, setSelectedVoucher] = useState(null);
+    const [priceVoucher, setPriceVoucher] = useState(null);
+    const [shippingVoucher, setShippingVoucher] = useState(null);
     const [showAddressModal, setShowAddressModal] = useState(false);
     const [showVoucherModal, setShowVoucherModal] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [orderItems, setOrderItems] = useState([]);
+    const [usedVouchersToday, setUsedVouchersToday] = useState([]);
     const [orderSummary, setOrderSummary] = useState({
         subtotal: 0,
-        shipping: 30000, // Giá shipping cơ bản
-        discount: 0,
+        shipping: 30000,
+        priceDiscount: 0,
+        shippingDiscount: 0,
         total: 0
     });
 
     useEffect(() => {
+        // Gửi tất cả request với cookie
+        axios.defaults.withCredentials = true;
         fetchAddresses();
         fetchVouchers();
         fetchSelectedItems();
+        fetchUsedVouchersToday();
     }, []);
+
+    const fetchUsedVouchersToday = async () => {
+        try {
+            console.log('Fetching used vouchers...');
+            const response = await axios.get('/api/vouchers/used-today');
+            if (response.data.status) {
+                setUsedVouchersToday(response.data.data);
+            }
+        } catch (error) {
+            console.error('Error fetching used vouchers today:', error);
+            console.log('Error response:', error.response?.data);
+        }
+    };
 
     const fetchSelectedItems = async () => {
         try {
@@ -35,16 +54,16 @@ export default function Checkout({ selectedItems }) {
             });
             if (response.data.status) {
                 setOrderItems(response.data.data.items);
-                updateOrderSummary(response.data.data.items, null);
+                updateOrderSummary(response.data.data.items, null, null);
             }
         } catch (error) {
             console.error('Error fetching selected items:', error);
         }
     };
+
     const isVoucherEligible = (voucher) => {
-        // Kiểm tra nếu tổng tiền đơn hàng đủ điều kiện áp dụng voucher
-        return orderSummary.subtotal >= voucher.minimum_order_amount;
-      };
+        return voucher.voucher_type === 'shipping' || orderSummary.subtotal >= voucher.minimum_order_amount;
+    };
 
     const fetchAddresses = async () => {
         try {
@@ -70,51 +89,63 @@ export default function Checkout({ selectedItems }) {
         }
     };
 
-    const updateOrderSummary = (items, voucher) => {
+    const updateOrderSummary = (items, priceVoucher, shippingVoucher) => {
         const subtotal = items.reduce((sum, item) => sum + item.subtotal, 0);
-        let discount = 0;
-        
-        if (voucher) {
-            if (voucher.discount_type === 'percentage') {
-                discount = Math.min(
-                    (subtotal * voucher.discount_amount / 100),
-                    voucher.maximum_discount_amount
+        let priceDiscount = 0;
+        let shippingDiscount = 0;
+        let shipping = 30000;
+
+        if (priceVoucher && priceVoucher.voucher_type === 'price') {
+            if (priceVoucher.discount_type === 'percentage') {
+                priceDiscount = Math.min(
+                    (subtotal * priceVoucher.discount_amount / 100),
+                    priceVoucher.maximum_discount_amount
                 );
             } else {
-                discount = Math.min(voucher.discount_amount, voucher.maximum_discount_amount);
+                priceDiscount = Math.min(priceVoucher.discount_amount, priceVoucher.maximum_discount_amount);
+            }
+        }
+
+        if (shippingVoucher && shippingVoucher.voucher_type === 'shipping') {
+            if (shippingVoucher.discount_type === 'percentage') {
+                shippingDiscount = Math.min(
+                    (shipping * shippingVoucher.discount_amount / 100),
+                    shippingVoucher.maximum_discount_amount
+                );
+            } else {
+                shippingDiscount = Math.min(shippingVoucher.discount_amount, shippingVoucher.maximum_discount_amount);
             }
         }
 
         setOrderSummary({
             subtotal,
-            shipping: 30000,
-            discount,
-            total: subtotal + 30000 - discount
+            shipping,
+            priceDiscount,
+            shippingDiscount,
+            total: subtotal + shipping - priceDiscount - shippingDiscount
         });
     };
-
-    
 
     const handlePlaceOrder = async () => {
         if (!selectedAddress) {
             alert('Vui lòng chọn địa chỉ giao hàng');
             return;
         }
-    
+
         try {
             setIsProcessing(true);
-            const response = await axios.post('/api/orders', {
+            const payload = {
                 address_id: selectedAddress.address_id,
                 payment_method: paymentMethod,
                 selected_items: Array.from(selectedItems),
                 note: orderNote || '',
-                voucher_code: selectedVoucher?.code
-            });
-    
-            console.log('Order Payload:', response); 
+                price_voucher_id: priceVoucher ? priceVoucher.voucher_id : null,
+                shipping_voucher_id: shippingVoucher ? shippingVoucher.voucher_id : null
+            };
+            console.log('Sending payload:', payload); // Debug payload
+            const response = await axios.post('/api/orders', payload);
             if (response.data.status) {
                 if (paymentMethod === 'VNPAY') {
-                    // Chuyển trực tiếp đến URL được trả về từ server
                     window.location.href = response.data.data.redirect_url;
                 } else {
                     window.location.href = '/dashboard';
@@ -122,16 +153,15 @@ export default function Checkout({ selectedItems }) {
             }
         } catch (error) {
             console.error('Lỗi đặt hàng:', error);
-            console.error('Chi tiết phản hồi:', error.response?.data);
             alert(error.response?.data?.message || 'Có lỗi xảy ra khi đặt hàng');
         } finally {
             setIsProcessing(false);
         }
     };
-    
+
     return (
         <MainLayout title="Thanh toán">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-7xl mx-auto px-4 py-8">
                 {/* Cột thông tin đơn hàng */}
                 <div className="md:col-span-2 space-y-6">
                     {/* Địa chỉ giao hàng */}
@@ -197,12 +227,17 @@ export default function Checkout({ selectedItems }) {
                                     onClick={() => setShowVoucherModal(true)}
                                     className="text-blue-600 hover:text-blue-800"
                                 >
-                                    {selectedVoucher ? 'Thay đổi' : 'Chọn mã'}
+                                    {priceVoucher || shippingVoucher ? 'Thay đổi' : 'Chọn mã'}
                                 </button>
                             </div>
-                            {selectedVoucher && (
-                                <div className="mt-2 text-green-600">
-                                    Đang áp dụng: {selectedVoucher.name}
+                            {priceVoucher && (
+                                <div className="mt-2 text-green-600 truncate">
+                                    Giá sản phẩm: {priceVoucher.name}
+                                </div>
+                            )}
+                            {shippingVoucher && (
+                                <div className="mt-2 text-green-600 truncate">
+                                    Phí vận chuyển: {shippingVoucher.name}
                                 </div>
                             )}
                         </div>
@@ -217,10 +252,16 @@ export default function Checkout({ selectedItems }) {
                                 <span>Phí vận chuyển</span>
                                 <span>{orderSummary.shipping.toLocaleString('vi-VN')}đ</span>
                             </div>
-                            {orderSummary.discount > 0 && (
+                            {orderSummary.priceDiscount > 0 && (
                                 <div className="flex justify-between text-green-600">
-                                    <span>Giảm giá</span>
-                                    <span>-{orderSummary.discount.toLocaleString('vi-VN')}đ</span>
+                                    <span>Giảm giá sản phẩm</span>
+                                    <span>-{orderSummary.priceDiscount.toLocaleString('vi-VN')}đ</span>
+                                </div>
+                            )}
+                            {orderSummary.shippingDiscount > 0 && (
+                                <div className="flex justify-between text-green-600">
+                                    <span>Giảm phí vận chuyển</span>
+                                    <span>-{orderSummary.shippingDiscount.toLocaleString('vi-VN')}đ</span>
                                 </div>
                             )}
                             <div className="flex justify-between font-medium text-lg pt-4 border-t">
@@ -231,10 +272,12 @@ export default function Checkout({ selectedItems }) {
 
                         <button
                             onClick={handlePlaceOrder}
-                            className="w-full mt-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            disabled={isProcessing}
+                            className="w-full mt-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
                         >
-                            {paymentMethod === 'COD' ? 'Đặt hàng' : 'Thanh toán với VNPAY'}
+                            {isProcessing ? 'Đang xử lý...' : paymentMethod === 'COD' ? 'Đặt hàng' : 'Thanh toán với VNPAY'}
                         </button>
+
                         {/* Ghi chú đơn hàng */}
                         <div className="border-t pt-4 mt-4">
                             <h3 className="font-medium mb-3">Ghi chú đơn hàng</h3>
@@ -246,6 +289,7 @@ export default function Checkout({ selectedItems }) {
                                 rows="3"
                             />
                         </div>
+
                         {/* Phương thức thanh toán */}
                         <div className="border-t pt-4 mt-4">
                             <h3 className="font-medium mb-3">Phương thức thanh toán</h3>
@@ -339,68 +383,134 @@ export default function Checkout({ selectedItems }) {
             <Modal show={showVoucherModal} onClose={() => setShowVoucherModal(false)}>
                 <div className="p-6 max-h-[80vh] flex flex-col">
                     <h2 className="text-lg font-medium mb-4">Chọn mã giảm giá</h2>
-                    
-                    {/* Scrollable voucher list */}
                     <div className="flex-1 overflow-y-auto min-h-0">
-                        <div className="space-y-3">
-                        {vouchers.map(voucher => {
-                            const isEligible = isVoucherEligible(voucher);
-                            return (
-                                <label
-                                    key={voucher.voucher_id}
-                                    className={`flex items-start space-x-3 p-3 border rounded-lg ${
-                                        isEligible ? 'cursor-pointer hover:bg-gray-50' : 'cursor-not-allowed opacity-70'
-                                    }`}
-                                >
-                                    <input
-                                        type="radio"
-                                        name="voucher"
-                                        checked={selectedVoucher?.voucher_id === voucher.voucher_id}
-                                        onChange={() => {
-                                            if (isEligible) {
-                                                setSelectedVoucher(voucher);
-                                                updateOrderSummary(orderItems, voucher);
-                                            }
-                                        }}
-                                        disabled={!isEligible}
-                                        className="mt-1"
-                                    />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex justify-between items-start">
-                                            <p className="font-medium truncate pr-2">{voucher.name}</p>
-                                            <p className="text-green-600 whitespace-nowrap">
-                                                {voucher.discount_type === 'percentage' 
-                                                    ? `Giảm ${voucher.discount_amount}%` 
-                                                    : `Giảm ${voucher.discount_amount.toLocaleString('vi-VN')}đ`}
-                                            </p>
-                                        </div>
-                                        <p className="text-sm text-gray-500 line-clamp-2">{voucher.description}</p>
-                                        <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-x-4">
-                                            <p className={!isEligible ? 'text-red-500 font-medium' : ''}>
-                                                Đơn tối thiểu: {voucher.minimum_order_amount.toLocaleString('vi-VN')}đ
-                                                {!isEligible && ' (Chưa đủ điều kiện)'}
-                                            </p>
-                                            <p>Giảm tối đa: {voucher.maximum_discount_amount.toLocaleString('vi-VN')}đ</p>
-                                            <p>HSD: {new Date(voucher.end_date).toLocaleDateString('vi-VN')}</p>
-                                        </div>
-                                    </div>
-                                </label>
-                            );
-                        })}
+                        {/* Phần mã giảm giá sản phẩm */}
+                        <div className="mb-6">
+                            <h3 className="text-md font-medium mb-3">Mã giảm giá sản phẩm</h3>
+                            <div className="space-y-3">
+                                {vouchers.filter(v => v.voucher_type === 'price' && !usedVouchersToday.includes(v.voucher_id)).length > 0 ? (
+                                    vouchers.filter(v => v.voucher_type === 'price' && !usedVouchersToday.includes(v.voucher_id)).map(voucher => {
+                                        const isEligible = isVoucherEligible(voucher);
+                                        return (
+                                            <label
+                                                key={voucher.voucher_id}
+                                                className={`flex items-start space-x-3 p-3 border rounded-lg ${
+                                                    isEligible ? 'cursor-pointer hover:bg-gray-50' : 'cursor-not-allowed opacity-70'
+                                                }`}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="price_voucher"
+                                                    checked={priceVoucher?.voucher_id === voucher.voucher_id}
+                                                    onChange={() => {
+                                                        if (isEligible) {
+                                                            setPriceVoucher(voucher);
+                                                            updateOrderSummary(orderItems, voucher, shippingVoucher);
+                                                        }
+                                                    }}
+                                                    disabled={!isEligible}
+                                                    className="mt-1"
+                                                />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex justify-between items-start">
+                                                        <p className="font-medium truncate pr-2">{voucher.name}</p>
+                                                        <p className="text-green-600 whitespace-nowrap">
+                                                            {voucher.discount_type === 'percentage' 
+                                                                ? `Giảm ${voucher.discount_amount}%` 
+                                                                : `Giảm ${voucher.discount_amount.toLocaleString('vi-VN')}đ`}
+                                                        </p>
+                                                    </div>
+                                                    <p className="text-sm text-gray-500 line-clamp-2">{voucher.description}</p>
+                                                    <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-x-4">
+                                                        <p className={!isEligible ? 'text-red-500 font-medium' : ''}>
+                                                            Đơn tối thiểu: {voucher.minimum_order_amount.toLocaleString('vi-VN')}đ
+                                                            {!isEligible && ' (Chưa đủ điều kiện)'}
+                                                        </p>
+                                                        <p>Giảm tối đa: {voucher.maximum_discount_amount.toLocaleString('vi-VN')}đ</p>
+                                                        <p>HSD: {new Date(voucher.end_date).toLocaleDateString('vi-VN')}</p>
+                                                        {voucher.is_new_user_only && (
+                                                            <p className="text-blue-600">Chỉ dành cho khách hàng mới</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        );
+                                    })
+                                ) : (
+                                    <p className="text-gray-500 text-sm">Không có mã giảm giá sản phẩm nào khả dụng</p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Phần mã giảm phí vận chuyển */}
+                        <div>
+                            <h3 className="text-md font-medium mb-3">Mã giảm phí vận chuyển</h3>
+                            <div className="space-y-3">
+                                {vouchers.filter(v => v.voucher_type === 'shipping' && !usedVouchersToday.includes(v.voucher_id)).length > 0 ? (
+                                    vouchers.filter(v => v.voucher_type === 'shipping' && !usedVouchersToday.includes(v.voucher_id)).map(voucher => {
+                                        const isEligible = isVoucherEligible(voucher);
+                                        return (
+                                            <label
+                                                key={voucher.voucher_id}
+                                                className={`flex items-start space-x-3 p-3 border rounded-lg ${
+                                                    isEligible ? 'cursor-pointer hover:bg-gray-50' : 'cursor-not-allowed opacity-70'
+                                                }`}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="shipping_voucher"
+                                                    checked={shippingVoucher?.voucher_id === voucher.voucher_id}
+                                                    onChange={() => {
+                                                        if (isEligible) {
+                                                            setShippingVoucher(voucher);
+                                                            updateOrderSummary(orderItems, priceVoucher, voucher);
+                                                        }
+                                                    }}
+                                                    disabled={!isEligible}
+                                                    className="mt-1"
+                                                />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex justify-between items-start">
+                                                        <p className="font-medium truncate pr-2">{voucher.name}</p>
+                                                        <p className="text-green-600 whitespace-nowrap">
+                                                            {voucher.discount_type === 'percentage' 
+                                                                ? `Giảm ${voucher.discount_amount}%` 
+                                                                : `Giảm ${voucher.discount_amount.toLocaleString('vi-VN')}đ`}
+                                                        </p>
+                                                    </div>
+                                                    <p className="text-sm text-gray-500 line-clamp-2">{voucher.description}</p>
+                                                    <div className="mt-1 text-xs text-gray-500 flex flex-wrap gap-x-4">
+                                                        <p className={!isEligible ? 'text-red-500 font-medium' : ''}>
+                                                            Đơn tối thiểu: {voucher.minimum_order_amount.toLocaleString('vi-VN')}đ
+                                                            {!isEligible && ' (Chưa đủ điều kiện)'}
+                                                        </p>
+                                                        <p>Giảm tối đa: {voucher.maximum_discount_amount.toLocaleString('vi-VN')}đ</p>
+                                                        <p>HSD: {new Date(voucher.end_date).toLocaleDateString('vi-VN')}</p>
+                                                        {voucher.is_new_user_only && (
+                                                            <p className="text-blue-600">Chỉ dành cho khách hàng mới</p>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </label>
+                                        );
+                                    })
+                                ) : (
+                                    <p className="text-gray-500 text-sm">Không có mã giảm phí vận chuyển nào khả dụng</p>
+                                )}
+                            </div>
                         </div>
                     </div>
-
-                    {/* Fixed button section at bottom */}
                     <div className="mt-4 pt-3 border-t flex justify-between">
                         <button
                             onClick={() => {
-                                setSelectedVoucher(null);
-                                updateOrderSummary(orderItems, null);
+                                setPriceVoucher(null);
+                                setShippingVoucher(null);
+                                updateOrderSummary(orderItems, null, null);
                                 setShowVoucherModal(false);
                             }}
                             className="px-4 py-2 text-gray-600 hover:text-gray-800"
                         >
-                            Bỏ chọn mã
+                            Bỏ chọn tất cả
                         </button>
                         <button
                             onClick={() => setShowVoucherModal(false)}

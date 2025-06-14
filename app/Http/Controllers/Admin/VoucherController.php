@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Voucher;
+use App\Models\Order;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -76,7 +77,6 @@ class VoucherController extends Controller
         }
     }
 
-    // Phương thức phụ trợ để xác định trạng thái voucher
     private function determineVoucherStatus($voucher)
     {
         $now = Carbon::now();
@@ -134,7 +134,9 @@ class VoucherController extends Controller
                 'end_date' => 'required|date|after:start_date',
                 'is_active' => 'boolean',
                 'discount_type' => 'required|in:percentage,fixed',
+                'voucher_type' => 'required|in:price,shipping',
                 'is_public' => 'boolean',
+                'is_new_user_only' => 'boolean',
                 'user_id' => 'nullable|exists:users,id'
             ]);
 
@@ -169,7 +171,9 @@ class VoucherController extends Controller
                 'end_date' => Carbon::parse($request->end_date),
                 'is_active' => $request->is_active ?? true,
                 'discount_type' => $request->discount_type,
+                'voucher_type' => $request->voucher_type,
                 'is_public' => $request->is_public ?? true,
+                'is_new_user_only' => $request->is_new_user_only ?? false,
                 'user_id' => $request->is_public ? null : $request->user_id
             ]);
 
@@ -208,7 +212,9 @@ class VoucherController extends Controller
                 'end_date' => 'required|date|after:start_date',
                 'is_active' => 'boolean',
                 'discount_type' => 'required|in:percentage,fixed',
+                'voucher_type' => 'required|in:price,shipping',
                 'is_public' => 'boolean',
+                'is_new_user_only' => 'boolean',
                 'user_id' => 'nullable|exists:users,id'
             ]);
 
@@ -241,7 +247,9 @@ class VoucherController extends Controller
             $voucher->end_date = Carbon::parse($request->end_date);
             $voucher->is_active = $request->is_active ?? true;
             $voucher->discount_type = $request->discount_type;
+            $voucher->voucher_type = $request->voucher_type;
             $voucher->is_public = $request->is_public ?? true;
+            $voucher->is_new_user_only = $request->is_new_user_only ?? false;
             $voucher->user_id = $request->is_public ? null : $request->user_id;
 
             $voucher->save();
@@ -321,24 +329,31 @@ class VoucherController extends Controller
             ], 500);
         }
     }
+
     public function getAvailableVouchers()
     {
         try {
             $currentTime = Carbon::now();
             $userId = Auth::id();
 
-            // Debug logging
+            // Kiểm tra xem người dùng có phải là người mới (chưa có đơn hàng)
+            $isNewUser = $userId ? Order::where('user_id', $userId)->count() === 0 : false;
+
             Log::info('Current time: ' . $currentTime);
             Log::info('User ID: ' . $userId);
+            Log::info('Is new user: ' . ($isNewUser ? 'true' : 'false'));
 
             $publicVouchers = Voucher::where('is_active', true)
                 ->where('is_public', true)
                 ->where('start_date', '<=', $currentTime)
                 ->where('end_date', '>=', $currentTime)
                 ->where('used_count', '<', DB::raw('usage_limit'))
+                ->where(function ($query) use ($isNewUser) {
+                    $query->where('is_new_user_only', false)
+                        ->orWhere('is_new_user_only', $isNewUser);
+                })
                 ->get();
 
-            // Debug logging
             Log::info('Public vouchers: ' . $publicVouchers);
 
             $userVouchers = Voucher::where('is_active', true)
@@ -346,9 +361,12 @@ class VoucherController extends Controller
                 ->where('start_date', '<=', $currentTime)
                 ->where('end_date', '>=', $currentTime)
                 ->where('used_count', '<', DB::raw('usage_limit'))
+                ->where(function ($query) use ($isNewUser) {
+                    $query->where('is_new_user_only', false)
+                        ->orWhere('is_new_user_only', $isNewUser);
+                })
                 ->get();
 
-            // Debug logging
             Log::info('User vouchers: ' . $userVouchers);
 
             return response()->json([
@@ -367,27 +385,35 @@ class VoucherController extends Controller
             ], 500);
         }
     }
+
     public function validateVoucher($code)
     {
         try {
             $currentTime = Carbon::now();
             $userId = Auth::id();
 
+            // Kiểm tra xem người dùng có phải là người mới
+            $isNewUser = $userId ? Order::where('user_id', $userId)->count() === 0 : false;
+
             $voucher = Voucher::where('code', $code)
                 ->where('is_active', true)
                 ->where('start_date', '<=', $currentTime)
                 ->where('end_date', '>=', $currentTime)
                 ->where('used_count', '<', 'usage_limit')
-                ->where(function ($query) use ($userId) {
+                ->where(function ($query) use ($userId, $isNewUser) {
                     $query->where('is_public', true)
                         ->orWhere('user_id', $userId);
+                    $query->where(function ($q) use ($isNewUser) {
+                        $q->where('is_new_user_only', false)
+                            ->orWhere('is_new_user_only', $isNewUser);
+                    });
                 })
                 ->first();
 
             if (!$voucher) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Invalid or expired voucher code'
+                    'message' => 'Mã giảm giá không hợp lệ hoặc đã hết hạn'
                 ], 404);
             }
 
@@ -404,12 +430,58 @@ class VoucherController extends Controller
                     'remaining_uses' => $voucher->usage_limit - $voucher->used_count,
                     'expires_in' => Carbon::parse($voucher->end_date)->diffForHumans(),
                     'discount_type' => $voucher->discount_type,
+                    'voucher_type' => $voucher->voucher_type,
+                    'is_new_user_only' => $voucher->is_new_user_only,
                 ]
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
-                'message' => 'Error validating voucher',
+                'message' => 'Lỗi khi xác thực mã giảm giá',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function getUsedVouchersToday()
+    {
+        try {
+            $userId = Auth::id();
+            if (!$userId) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'User chưa đăng nhập'
+                ], 401);
+            }
+
+            $todayStart = Carbon::today()->startOfDay();
+            $todayEnd = Carbon::today()->endOfDay();
+
+            $usedVouchers = Order::where('user_id', $userId)
+                ->whereBetween('order_date', [$todayStart, $todayEnd])
+                ->where(function ($query) {
+                    $query->whereNotNull('price_voucher_id')
+                        ->orWhereNotNull('shipping_voucher_id');
+                })
+                ->select('price_voucher_id', 'shipping_voucher_id')
+                ->get()
+                ->flatMap(function ($order) {
+                    return [$order->price_voucher_id, $order->shipping_voucher_id];
+                })
+                ->filter()
+                ->unique()
+                ->values();
+
+            return response()->json([
+                'status' => true,
+                'data' => $usedVouchers
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error fetching used vouchers today: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'status' => false,
+                'message' => 'Lỗi khi lấy danh sách voucher đã dùng hôm nay',
                 'error' => $e->getMessage()
             ], 500);
         }

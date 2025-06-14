@@ -20,7 +20,9 @@ export default function OrderDetail({ auth, orderId }) {
 
     const fetchOrderDetail = async () => {
         try {
-            const response = await axios.get(`/api/orders/${orderId}`);
+            const response = await axios.get(`/api/orders/${orderId}`, {
+                params: { include_delivery_order: true }
+            });
             if (response.data.status) {
                 setOrder(response.data.data);
             } else {
@@ -126,7 +128,7 @@ export default function OrderDetail({ auth, orderId }) {
                             </div>
 
                             <div className="space-x-2">
-                                {['PENDING', 'CONFIRMED'].includes(order.order.order_status) && (
+                                {order.order.order_status === 'PENDING' && (
                                     <button
                                         onClick={handleCancelOrder}
                                         className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition duration-150"
@@ -134,7 +136,7 @@ export default function OrderDetail({ auth, orderId }) {
                                         Hủy đơn hàng
                                     </button>
                                 )}
-                                {order.order.order_status === 'DELIVERING' && (
+                                {order.order.delivery_order?.status === 'delivered' && order.order.order_status !== 'COMPLETED' && (
                                     <button
                                         onClick={handleConfirmDelivery}
                                         className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition duration-150"
@@ -196,7 +198,7 @@ export default function OrderDetail({ auth, orderId }) {
                                                 {order.order.order_status === 'COMPLETED' && (
                                                     <button
                                                         onClick={(e) => {
-                                                            e.preventDefault(); // Ngăn Link chuyển hướng khi click nút
+                                                            e.preventDefault();
                                                             if (item.product_id) {
                                                                 setSelectedProduct({
                                                                     id: String(item.product_id),

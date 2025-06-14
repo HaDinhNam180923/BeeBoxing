@@ -7,7 +7,6 @@ import "react-datepicker/dist/react-datepicker.css";
 
 const VoucherForm = ({ voucher, isEditing = false }) => {
   const [loading, setLoading] = useState(false);
-  const [users, setUsers] = useState([]);
   const [searchUser, setSearchUser] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [showUserSearch, setShowUserSearch] = useState(false);
@@ -33,11 +32,12 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
     end_date: endDate,
     is_active: voucher?.is_active ?? true,
     discount_type: voucher?.discount_type || 'percentage',
+    voucher_type: voucher?.voucher_type || 'price',
     is_public: voucher?.is_public ?? true,
+    is_new_user_only: voucher?.is_new_user_only ?? false,
     user_id: voucher?.user_id || null,
   });
 
-  // Tải danh sách người dùng cho voucher cá nhân (admin có thể tìm kiếm và chọn người dùng)
   useEffect(() => {
     if (searchUser.length >= 2) {
       searchUsers(searchUser);
@@ -109,9 +109,9 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="bg-white shadow px-6 py-8 rounded-md">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl mx-auto">
+      <div className="bg-white shadow px-4 py-6 rounded-md">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="col-span-1">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Thông tin cơ bản</h3>
             
@@ -131,7 +131,7 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
                 <button
                   type="button"
                   onClick={generateRandomCode}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-r-md hover:bg-gray-300"
+                  className="px-3 py-2 bg-gray-200 text-gray-700 rounded-r-md hover:bg-gray-300"
                 >
                   Tạo mã
                 </button>
@@ -172,8 +172,27 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
             </div>
 
             <div className="mb-4">
+              <label htmlFor="voucher_type" className="block text-sm font-medium text-gray-700 mb-1">
+                Loại mã giảm giá <span className="text-red-500">*</span>
+              </label>
+              <select
+                id="voucher_type"
+                value={data.voucher_type}
+                onChange={(e) => setData('voucher_type', e.target.value)}
+                className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+                required
+              >
+                <option value="price">Giảm giá đơn hàng</option>
+                <option value="shipping">Giảm phí vận chuyển</option>
+              </select>
+              {errors.voucher_type && (
+                <p className="mt-1 text-sm text-red-600">{errors.voucher_type}</p>
+              )}
+            </div>
+
+            <div className="mb-4">
               <label htmlFor="discount_type" className="block text-sm font-medium text-gray-700 mb-1">
-                Loại giảm giá <span className="text-red-500">*</span>
+                Loại giá trị giảm <span className="text-red-500">*</span>
               </label>
               <select
                 id="discount_type"
@@ -322,7 +341,7 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
                   Kích hoạt
                 </label>
               </div>
-              <div className="flex items-center">
+              <div className="flex items-center mb-2">
                 <input
                   id="is_public"
                   type="checkbox"
@@ -338,6 +357,18 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
                 />
                 <label htmlFor="is_public" className="ml-2 block text-sm font-medium text-gray-700">
                   Áp dụng cho tất cả khách hàng
+                </label>
+              </div>
+              <div className="flex items-center">
+                <input
+                  id="is_new_user_only"
+                  type="checkbox"
+                  checked={data.is_new_user_only}
+                  onChange={(e) => setData('is_new_user_only', e.target.checked)}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <label htmlFor="is_new_user_only" className="ml-2 block text-sm font-medium text-gray-700">
+                  Chỉ dành cho khách hàng mới
                 </label>
               </div>
             </div>
@@ -365,7 +396,7 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
                       {searchResults.map(user => (
                         <div
                           key={user.id}
-                          className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                          className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
                           onClick={() => selectUser(user)}
                         >
                           <div className="font-medium">{user.name}</div>
@@ -385,7 +416,7 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
           </div>
         </div>
 
-        <div className="col-span-2 mt-4 pt-4 border-t border-gray-200">
+        <div className="mt-4 pt-4 border-t border-gray-200">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Ghi chú</h3>
           <p className="text-sm text-gray-600 mb-2">
             - Nếu chọn loại giảm giá phần trăm, giá trị giảm tối đa sẽ được áp dụng khi tính toán.
@@ -393,8 +424,11 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
           <p className="text-sm text-gray-600 mb-2">
             - Mã giảm giá chỉ áp dụng cho đơn hàng có giá trị lớn hơn hoặc bằng giá trị đơn hàng tối thiểu.
           </p>
+          <p className="text-sm text-gray-600 mb-2">
+            - Mã giảm giá phí vận chuyển chỉ áp dụng cho phần phí ship, tối đa bằng giá trị phí ship của đơn hàng.
+          </p>
           <p className="text-sm text-gray-600">
-            - Mã giảm giá có thể áp dụng cho tất cả khách hàng hoặc chỉ một khách hàng cụ thể.
+            - Mã giảm giá có thể áp dụng cho tất cả khách hàng, khách hàng mới, hoặc một khách hàng cụ thể.
           </p>
         </div>
       </div>
@@ -403,14 +437,14 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
         <button
           type="button"
           onClick={() => window.history.back()}
-          className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          className="px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
         >
           Hủy
         </button>
         <button
           type="submit"
           disabled={processing || loading}
-          className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          className="px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
         >
           {processing || loading ? 'Đang xử lý...' : isEditing ? 'Cập nhật' : 'Thêm mới'}
         </button>

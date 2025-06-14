@@ -6,25 +6,13 @@ const OrderStatusUpdate = ({ currentStatus, onStatusChange }) => {
   const [selectedStatus, setSelectedStatus] = useState('');
   
   const getAvailableStatuses = (currentStatus) => {
-    switch (currentStatus) {
-      case 'PENDING':
-        return [
-          { value: 'CONFIRMED', label: 'Xác nhận đơn hàng' },
-          { value: 'CANCELLED', label: 'Hủy đơn hàng' }
-        ];
-      case 'CONFIRMED':
-        return [
-          { value: 'DELIVERING', label: 'Đang giao hàng' },
-          { value: 'CANCELLED', label: 'Hủy đơn hàng' }
-        ];
-      case 'DELIVERING':
-        return [
-          { value: 'COMPLETED', label: 'Hoàn thành đơn hàng' },
-          { value: 'CANCELLED', label: 'Hủy đơn hàng' }
-        ];
-      default:
-        return [];
+    if (currentStatus === 'PENDING') {
+      return [
+        { value: 'CONFIRMED', label: 'Xác nhận đơn hàng' },
+        { value: 'CANCELLED', label: 'Hủy đơn hàng' }
+      ];
     }
+    return [];
   };
   
   const handleUpdateClick = () => {
@@ -53,7 +41,7 @@ const OrderStatusUpdate = ({ currentStatus, onStatusChange }) => {
   };
   
   const availableStatuses = getAvailableStatuses(currentStatus);
-  const canUpdateStatus = ['PENDING', 'CONFIRMED', 'DELIVERING'].includes(currentStatus);
+  const canUpdateStatus = currentStatus === 'PENDING';
 
   return (
     <div className="bg-white overflow-hidden shadow-sm sm:rounded-lg">
@@ -65,8 +53,8 @@ const OrderStatusUpdate = ({ currentStatus, onStatusChange }) => {
             <OrderStatusBadge status={currentStatus} />
             <span className="text-sm text-gray-500">
               {
-                currentStatus === 'COMPLETED' ? 'Đơn hàng đã hoàn thành' : 
                 currentStatus === 'CANCELLED' ? 'Đơn hàng đã bị hủy' : 
+                currentStatus === 'CONFIRMED' ? 'Đơn hàng đã xác nhận' :
                 'Trạng thái hiện tại'
               }
             </span>

@@ -12,7 +12,8 @@ class Order extends Model
     protected $fillable = [
         'user_id',
         'address_id',
-        'voucher_id',
+        'price_voucher_id',
+        'shipping_voucher_id',
         'order_date',
         'subtotal_amount',
         'shipping_fee',
@@ -43,14 +44,19 @@ class Order extends Model
         return $this->belongsTo(Address::class, 'address_id');
     }
 
+    public function priceVoucher()
+    {
+        return $this->belongsTo(Voucher::class, 'price_voucher_id');
+    }
+
+    public function shippingVoucher()
+    {
+        return $this->belongsTo(Voucher::class, 'shipping_voucher_id');
+    }
+
     public function deliveryOrder()
     {
         return $this->hasOne(DeliveryOrder::class, 'order_id', 'order_id');
-    }
-
-    public function voucher()
-    {
-        return $this->belongsTo(Voucher::class, 'voucher_id');
     }
 
     public function orderDetails()

@@ -7,7 +7,6 @@ import ColorSelector from '@/components/products/ColorSelector';
 import AlsoBoughtProducts from '@/components/products/AlsoBoughtProducts';
 import SizeSelector from '@/components/products/SizeSelector';
 import { addToRecentlyViewed } from '@/components/products/recentlyViewedHelper';
-
 import axios from 'axios';
 import { usePage } from '@inertiajs/react';
 
@@ -60,6 +59,33 @@ const TabButton = ({ active, onClick, children }) => (
     {children}
   </button>
 );
+
+// Breadcrumb Component
+const Breadcrumb = ({ categories }) => {
+  return (
+    <nav className="flex items-center text-sm text-gray-600 mb-4">
+      <ol className="flex items-center space-x-2">
+        <li>
+          <a href="/" className="hover:text-blue-600">
+            Trang chủ
+          </a>
+        </li>
+        {categories.map((category, index) => (
+          <li key={category.id} className="flex items-center">
+            <span className="mx-2">/</span>
+            {index === categories.length - 1 ? (
+              <span className="text-gray-500">{category.name}</span>
+            ) : (
+              <a href={`/category/${category.id}`} className="hover:text-blue-600">
+                {category.name}
+              </a>
+            )}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+};
 
 // Loading, Error and No Data states
 const LoadingState = () => (
@@ -179,13 +205,26 @@ const ReviewList = ({ productId }) => {
 // Main Detail Component
 const Detail = ({ id }) => {
   const { auth, csrf_token } = usePage().props;
-  const { data: response, isLoading, error } = useQuery({
+
+  // Lấy thông tin sản phẩm
+  const { data: productResponse, isLoading, error } = useQuery({
     queryKey: ['product', id],
     queryFn: () => getProductDetail(id)
   });
 
+  // Lấy danh sách danh mục cha
+  const { data: categoryAncestors, isLoading: isLoadingCategories } = useQuery({
+    queryKey: ['categoryAncestors', productResponse?.data?.category?.category_id],
+    queryFn: async () => {
+      if (!productResponse?.data?.category?.category_id) return [];
+      const response = await axios.get(`/api/categories/${productResponse.data.category.category_id}/ancestors`);
+      return response.data.data;
+    },
+    enabled: !!productResponse?.data?.category?.category_id, // Chỉ gọi khi có category_id
+  });
+
   const ProductContent = () => {
-    const product = response.data;
+    const product = productResponse.data;
     const [selectedColor, setSelectedColor] = useState(product.colors[0]);
     const [selectedSize, setSelectedSize] = useState(product.colors[0].inventory[0]?.size);
     const [activeTab, setActiveTab] = useState('description');
@@ -270,6 +309,11 @@ const Detail = ({ id }) => {
 
     return (
       <div className="space-y-8">
+        {/* Thêm Breadcrumb */}
+        {categoryAncestors && !isLoadingCategories && (
+          <Breadcrumb categories={categoryAncestors} />
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           {/* Left column - Product Gallery */}
           <ProductGallery color={selectedColor} />
@@ -424,13 +468,13 @@ const Detail = ({ id }) => {
   };
 
   return (
-    <MainLayout title={response?.data?.name || 'Chi tiết sản phẩm'}>
+    <MainLayout title={productResponse?.data?.name || 'Chi tiết sản phẩm'}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {isLoading ? (
+        {isLoading || isLoadingCategories ? (
           <LoadingState />
         ) : error ? (
           <ErrorState error={error} />
-        ) : !response?.data ? (
+        ) : !productResponse?.data ? (
           <NoDataState />
         ) : (
           <ProductContent />
