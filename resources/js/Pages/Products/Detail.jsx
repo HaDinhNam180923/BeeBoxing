@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getProductDetail } from '@/services/api';
-import MainLayout from '@/components/layouts/MainLayout';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import GuestLayout from '@/Layouts/GuestLayout';
 import ProductGallery from '@/components/products/ProductGallery';
 import ColorSelector from '@/components/products/ColorSelector';
 import AlsoBoughtProducts from '@/components/products/AlsoBoughtProducts';
@@ -203,8 +204,11 @@ const ReviewList = ({ productId }) => {
 };
 
 // Main Detail Component
-const Detail = ({ id }) => {
-  const { auth, csrf_token } = usePage().props;
+const Detail = ({ auth, id }) => {
+  const { auth: pageAuth, csrf_token } = usePage().props;
+
+  // Select layout based on authentication status
+  const Layout = auth.user ? AuthenticatedLayout : GuestLayout;
 
   // Lấy thông tin sản phẩm
   const { data: productResponse, isLoading, error } = useQuery({
@@ -468,7 +472,7 @@ const Detail = ({ id }) => {
   };
 
   return (
-    <MainLayout title={productResponse?.data?.name || 'Chi tiết sản phẩm'}>
+    <Layout title={productResponse?.data?.name || 'Chi tiết sản phẩm'}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {isLoading || isLoadingCategories ? (
           <LoadingState />
@@ -480,7 +484,7 @@ const Detail = ({ id }) => {
           <ProductContent />
         )}
       </div>
-    </MainLayout>
+    </Layout>
   );
 };
 

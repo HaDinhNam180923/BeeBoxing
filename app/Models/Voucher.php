@@ -22,7 +22,9 @@ class Voucher extends Model
         'end_date',
         'is_active',
         'discount_type',
+        'voucher_type', // Thêm trường này
         'is_public',
+        'is_new_user_only', // Thêm trường này
         'user_id'
     ];
 
@@ -33,7 +35,8 @@ class Voucher extends Model
         'start_date' => 'datetime',
         'end_date' => 'datetime',
         'is_active' => 'boolean',
-        'is_public' => 'boolean'
+        'is_public' => 'boolean',
+        'is_new_user_only' => 'boolean', // Thêm cast cho trường này
     ];
 
     public function user()

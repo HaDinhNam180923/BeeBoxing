@@ -157,7 +157,6 @@ class VoucherController extends Controller
 
             DB::beginTransaction();
 
-            // Tạo mã giảm giá mới
             $voucher = Voucher::create([
                 'code' => strtoupper($request->code),
                 'name' => $request->name,

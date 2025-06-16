@@ -263,6 +263,234 @@ class OrderController extends Controller
         }
     }
 
+    public function reorder(Request $request, $orderId)
+    {
+        try {
+            $validated = $request->validate([
+                'address_id' => 'required|exists:addresses,address_id',
+                'price_voucher_id' => 'nullable|exists:vouchers,voucher_id',
+                'shipping_voucher_id' => 'nullable|exists:vouchers,voucher_id',
+                'payment_method' => 'required|in:COD,VNPAY',
+                'note' => 'nullable|string|max:255'
+            ]);
+
+            $userId = Auth::id();
+            $todayStart = Carbon::today()->startOfDay();
+            $todayEnd = Carbon::today()->endOfDay();
+
+            DB::beginTransaction();
+
+            // Kiểm tra voucher đã dùng hôm nay
+            $priceVoucherId = isset($validated['price_voucher_id']) ? $validated['price_voucher_id'] : null;
+            $shippingVoucherId = isset($validated['shipping_voucher_id']) ? $validated['shipping_voucher_id'] : null;
+
+            if ($priceVoucherId || $shippingVoucherId) {
+                $usedVouchers = Order::where('user_id', $userId)
+                    ->whereBetween('order_date', [$todayStart, $todayEnd])
+                    ->where(function ($query) use ($priceVoucherId, $shippingVoucherId) {
+                        if ($priceVoucherId) {
+                            $query->orWhere('price_voucher_id', $priceVoucherId);
+                        }
+                        if ($shippingVoucherId) {
+                            $query->orWhere('shipping_voucher_id', $shippingVoucherId);
+                        }
+                    })
+                    ->exists();
+
+                if ($usedVouchers) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Bạn đã sử dụng một trong các voucher này hôm nay'
+                    ], 422);
+                }
+            }
+
+            // Lấy thông tin đơn hàng cũ
+            $oldOrder = Order::where('order_id', $orderId)
+                ->where('user_id', $userId)
+                ->where('order_status', 'COMPLETED')
+                ->with(['orderDetails.inventory.color.product'])
+                ->first();
+
+            if (!$oldOrder) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Không tìm thấy đơn hàng hoặc đơn hàng chưa hoàn thành'
+                ], 404);
+            }
+
+            $orderItems = [];
+            $subtotalAmount = 0;
+
+            // Kiểm tra và tính toán lại giá sản phẩm
+            foreach ($oldOrder->orderDetails as $detail) {
+                $inventory = $detail->inventory;
+                $product = $inventory->color->product;
+
+                if ($detail->quantity > $inventory->stock_quantity) {
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => false,
+                        'message' => "Sản phẩm {$product->name} không đủ số lượng trong kho"
+                    ], 400);
+                }
+
+                $basePrice = $product->base_price * (1 - ($product->discount / 100));
+                $finalPrice = round($basePrice * (1 + ($inventory->price_adjustment / 100)));
+                $subtotal = $finalPrice * $detail->quantity;
+
+                $subtotalAmount += $subtotal;
+                $orderItems[] = [
+                    'inventory_id' => $inventory->inventory_id,
+                    'quantity' => $detail->quantity,
+                    'unit_price' => $finalPrice,
+                    'subtotal' => $subtotal
+                ];
+
+                $inventory->decrement('stock_quantity', $detail->quantity);
+            }
+
+            // Kiểm tra voucher
+            $priceVoucher = $priceVoucherId ? Voucher::where('voucher_id', $priceVoucherId)
+                ->where('is_active', true)
+                ->where('start_date', '<=', now())
+                ->where('end_date', '>=', now())
+                ->where('used_count', '<', DB::raw('usage_limit'))
+                ->where('voucher_type', 'price')
+                ->where(function ($query) use ($userId) {
+                    $query->where('is_public', true)
+                        ->orWhere('user_id', $userId);
+                })
+                ->first() : null;
+
+            $shippingVoucher = $shippingVoucherId ? Voucher::where('voucher_id', $shippingVoucherId)
+                ->where('is_active', true)
+                ->where('start_date', '<=', now())
+                ->where('end_date', '>=', now())
+                ->where('used_count', '<', DB::raw('usage_limit'))
+                ->where('voucher_type', 'shipping')
+                ->where(function ($query) use ($userId) {
+                    $query->where('is_public', true)
+                        ->orWhere('user_id', $userId);
+                })
+                ->first() : null;
+
+            $priceDiscount = 0;
+            $shippingDiscount = 0;
+            $shippingFee = 30000;
+
+            if ($priceVoucher && $subtotalAmount >= $priceVoucher->minimum_order_amount) {
+                if ($priceVoucher->discount_type === 'percentage') {
+                    $priceDiscount = min(
+                        ($subtotalAmount * $priceVoucher->discount_amount / 100),
+                        $priceVoucher->maximum_discount_amount
+                    );
+                } else {
+                    $priceDiscount = min(
+                        $priceVoucher->discount_amount,
+                        $priceVoucher->maximum_discount_amount
+                    );
+                }
+                $priceVoucher->increment('used_count');
+            }
+
+            if ($shippingVoucher && $subtotalAmount >= $shippingVoucher->minimum_order_amount) {
+                if ($shippingVoucher->discount_type === 'percentage') {
+                    $shippingDiscount = min(
+                        ($shippingFee * $shippingVoucher->discount_amount / 100),
+                        $shippingVoucher->maximum_discount_amount
+                    );
+                } else {
+                    $shippingDiscount = min(
+                        $shippingVoucher->discount_amount,
+                        $shippingVoucher->maximum_discount_amount
+                    );
+                }
+                $shippingVoucher->increment('used_count');
+            }
+
+            $discountAmount = $priceDiscount + $shippingDiscount;
+            $finalAmount = $subtotalAmount + $shippingFee - $discountAmount;
+
+            // Tạo đơn hàng mới
+            $newOrder = Order::create([
+                'user_id' => $userId,
+                'address_id' => $validated['address_id'],
+                'price_voucher_id' => $priceVoucher ? $priceVoucher->voucher_id : null,
+                'shipping_voucher_id' => $shippingVoucher ? $shippingVoucher->voucher_id : null,
+                'order_date' => now(),
+                'subtotal_amount' => $subtotalAmount,
+                'shipping_fee' => $shippingFee,
+                'discount_amount' => $discountAmount,
+                'final_amount' => $finalAmount,
+                'payment_method' => $validated['payment_method'],
+                'payment_status' => 'PENDING',
+                'order_status' => 'PENDING',
+                'note' => $validated['note'] ?? null,
+                'tracking_number' => $this->generateTrackingNumber()
+            ]);
+
+            // Tạo chi tiết đơn hàng mới
+            foreach ($orderItems as $item) {
+                OrderDetail::create([
+                    'order_id' => $newOrder->order_id,
+                    'inventory_id' => $item['inventory_id'],
+                    'quantity' => $item['quantity'],
+                    'unit_price' => $item['unit_price'],
+                    'subtotal' => $item['subtotal']
+                ]);
+            }
+
+            if ($validated['payment_method'] === 'VNPAY') {
+                $paymentData = $this->vnpayService->createPaymentData($newOrder);
+
+                DB::commit();
+
+                Log::info('VNPay Reorder Created', [
+                    'order_id' => $newOrder->order_id,
+                    'tracking_number' => $newOrder->tracking_number,
+                    'redirect_url' => route('payment.vnpay', ['orderId' => $newOrder->order_id]),
+                    'payment_data' => $paymentData
+                ]);
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Đặt lại đơn hàng thành công',
+                    'data' => [
+                        'order_id' => $newOrder->order_id,
+                        'redirect_url' => route('payment.vnpay', [
+                            'orderId' => $newOrder->order_id,
+                            'paymentData' => $paymentData
+                        ])
+                    ]
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Đặt lại đơn hàng thành công',
+                'data' => [
+                    'order_id' => $newOrder->order_id,
+                    'tracking_number' => $newOrder->tracking_number,
+                    'final_amount' => $newOrder->final_amount,
+                    'order_status' => $newOrder->order_status,
+                    'payment_status' => $newOrder->payment_status
+                ]
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Reorder Error', ['error' => $e->getMessage(), 'request' => $request->all()]);
+            return response()->json([
+                'status' => false,
+                'message' => 'Có lỗi xảy ra khi đặt lại đơn hàng: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function handleVNPayReturn(Request $request)
     {
         Log::info('VNPay Return Request Received', ['url' => $request->fullUrl(), 'data' => $request->all(), 'headers' => $request->headers->all()]);

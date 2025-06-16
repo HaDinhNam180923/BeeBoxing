@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import MainLayout from '@/components/layouts/MainLayout';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import GuestLayout from '@/Layouts/GuestLayout';
 import ProductCard from '@/components/products/ProductCard';
 
-const CollectionDetail = ({ slug }) => {
+const CollectionDetail = ({ auth, slug }) => {
   const [collection, setCollection] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Select layout based on authentication status
+  const Layout = auth.user ? AuthenticatedLayout : GuestLayout;
 
   useEffect(() => {
     const fetchCollectionDetail = async () => {
@@ -34,7 +38,7 @@ const CollectionDetail = ({ slug }) => {
 
   if (loading) {
     return (
-      <MainLayout title="Đang tải...">
+      <Layout title="Đang tải...">
         <div className="max-w-7xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
           <div className="animate-pulse">
             <div className="h-12 bg-gray-200 rounded w-1/3 mb-6"></div>
@@ -47,13 +51,13 @@ const CollectionDetail = ({ slug }) => {
             </div>
           </div>
         </div>
-      </MainLayout>
+      </Layout>
     );
   }
 
   if (error) {
     return (
-      <MainLayout title="Lỗi">
+      <Layout title="Lỗi">
         <div className="max-w-7xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
           <div className="text-center py-12">
             <h2 className="text-2xl font-bold text-red-600 mb-4">
@@ -62,13 +66,13 @@ const CollectionDetail = ({ slug }) => {
             <p className="text-gray-600">{error}</p>
           </div>
         </div>
-      </MainLayout>
+      </Layout>
     );
   }
 
   if (!collection) {
     return (
-      <MainLayout title="Không tìm thấy">
+      <Layout title="Không tìm thấy">
         <div className="max-w-7xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
           <div className="text-center py-12">
             <h2 className="text-2xl font-bold text-gray-600 mb-4">
@@ -77,12 +81,12 @@ const CollectionDetail = ({ slug }) => {
             <p className="text-gray-500">Bộ sưu tập này không tồn tại hoặc đã bị xóa</p>
           </div>
         </div>
-      </MainLayout>
+      </Layout>
     );
   }
 
   return (
-    <MainLayout title={collection.name}>
+    <Layout title={collection.name}>
       <div className="max-w-7xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
         <div className="mb-10">
           <h1 className="text-3xl font-bold text-gray-900 mb-4">{collection.name}</h1>
@@ -106,7 +110,7 @@ const CollectionDetail = ({ slug }) => {
           </div>
         )}
       </div>
-    </MainLayout>
+    </Layout>
   );
 };
 

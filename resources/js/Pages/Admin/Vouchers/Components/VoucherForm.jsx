@@ -38,6 +38,13 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
     user_id: voucher?.user_id || null,
   });
 
+  // Cập nhật maximum_discount_amount khi discount_type là fixed
+  useEffect(() => {
+    if (data.discount_type === 'fixed') {
+      setData('maximum_discount_amount', data.discount_amount); // Tự động gán bằng discount_amount
+    }
+  }, [data.discount_type, data.discount_amount]);
+
   useEffect(() => {
     if (searchUser.length >= 2) {
       searchUsers(searchUser);
@@ -71,6 +78,8 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
         start_date: data.start_date.toISOString(),
         end_date: data.end_date.toISOString(),
       };
+      
+      console.log('Form Data:', formData); // Debug payload
       
       if (isEditing) {
         await axios.put(`/api/admin/vouchers/${voucher.voucher_id}`, formData);
@@ -248,24 +257,26 @@ const VoucherForm = ({ voucher, isEditing = false }) => {
               )}
             </div>
 
-            <div className="mb-4">
-              <label htmlFor="maximum_discount_amount" className="block text-sm font-medium text-gray-700 mb-1">
-                Giảm giá tối đa (VNĐ) <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="maximum_discount_amount"
-                type="number"
-                step="1000"
-                min="0"
-                value={data.maximum_discount_amount}
-                onChange={(e) => setData('maximum_discount_amount', e.target.value)}
-                className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-                required
-              />
-              {errors.maximum_discount_amount && (
-                <p className="mt-1 text-sm text-red-600">{errors.maximum_discount_amount}</p>
-              )}
-            </div>
+            {data.discount_type === 'percentage' && ( // Chỉ hiển thị khi discount_type là percentage
+              <div className="mb-4">
+                <label htmlFor="maximum_discount_amount" className="block text-sm font-medium text-gray-700 mb-1">
+                  Giảm giá tối đa (VNĐ) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="maximum_discount_amount"
+                  type="number"
+                  step="1000"
+                  min="0"
+                  value={data.maximum_discount_amount}
+                  onChange={(e) => setData('maximum_discount_amount', e.target.value)}
+                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+                  required
+                />
+                {errors.maximum_discount_amount && (
+                  <p className="mt-1 text-sm text-red-600">{errors.maximum_discount_amount}</p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="col-span-1">

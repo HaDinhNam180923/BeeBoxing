@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import MainLayout from '@/components/layouts/MainLayout';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import GuestLayout from '@/Layouts/GuestLayout';
 import CollectionCard from '@/components/collections/CollectionCard';
 
-const CollectionsIndex = () => {
+const CollectionsIndex = ({ auth }) => {
   const [collections, setCollections] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Select layout based on authentication status
+  const Layout = auth.user ? AuthenticatedLayout : GuestLayout;
 
   useEffect(() => {
     const fetchCollections = async () => {
@@ -27,7 +31,7 @@ const CollectionsIndex = () => {
   }, []);
 
   return (
-    <MainLayout title="Bộ sưu tập">
+    <Layout title="Bộ sưu tập">
       <div className="max-w-7xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Bộ sưu tập</h1>
         
@@ -52,7 +56,7 @@ const CollectionsIndex = () => {
           </div>
         )}
       </div>
-    </MainLayout>
+    </Layout>
   );
 };
 

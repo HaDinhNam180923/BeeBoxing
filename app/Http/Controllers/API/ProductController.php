@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Product;
 use App\Models\ProductColor;
-
 use App\Models\Category;
 use App\Models\ProductImage;
 use App\Models\ProductInventory;
@@ -102,6 +101,7 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
     public function createProductImages(Request $request)
     {
         // Validate request
@@ -172,6 +172,7 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
     public function deleteProduct($id)
     {
         try {
@@ -224,6 +225,7 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
     public function getProducts(Request $request)
     {
         try {
@@ -285,6 +287,13 @@ class ProductController extends Controller
             // Search by name
             if ($request->has('search')) {
                 $query->where('name', 'like', '%' . $request->search . '%');
+            }
+
+            // Filter by color_name
+            if ($request->has('color_name')) {
+                $query->whereHas('colors', function ($q) use ($request) {
+                    $q->where('color_name', $request->color_name);
+                });
             }
 
             // Sorting
@@ -354,6 +363,31 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
+    public function getProductColors(Request $request)
+    {
+        try {
+            // Lấy tất cả màu sắc duy nhất từ bảng product_colors
+            $colors = ProductColor::select('color_name', 'color_code')
+                ->distinct()
+                ->orderBy('color_name')
+                ->get();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Product colors retrieved successfully',
+                'data' => $colors
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error in getProductColors: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to retrieve product colors',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function getProductDetail($id)
     {
         try {
@@ -425,6 +459,7 @@ class ProductController extends Controller
             ], 500);
         }
     }
+
     public function getProductForEdit($id)
     {
         try {
@@ -633,7 +668,6 @@ class ProductController extends Controller
 
         return response()->json($result);
     }
-
 
     public function getRecentlyViewedProducts(Request $request)
     {
@@ -940,6 +974,7 @@ class ProductController extends Controller
 
         return $products;
     }
+
     public function deleteProductImage($imageId)
     {
         try {

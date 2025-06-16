@@ -21,7 +21,7 @@ const PriceRangeFilter = ({ onPriceChange, initialMin = 0, initialMax = 1000000 
   return (
     <div className="w-full">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium text-gray-900">Khoảng giá</span>
+        <span className="text-sm font-medium text-gray-900"></span>
         <span className="text-sm text-gray-600">
           {range[0].toLocaleString('vi-VN')}đ - {range[1].toLocaleString('vi-VN')}đ
         </span>

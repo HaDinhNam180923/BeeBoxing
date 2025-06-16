@@ -3,7 +3,7 @@ import MainLayout from '@/components/layouts/MainLayout';
 import axios from 'axios';
 import Modal from '@/Components/Modal';
 
-export default function Checkout({ selectedItems }) {
+export default function Reorder({ orderId }) {
     const [addresses, setAddresses] = useState([]);
     const [vouchers, setVouchers] = useState([]);
     const [paymentMethod, setPaymentMethod] = useState('COD');
@@ -36,31 +36,29 @@ export default function Checkout({ selectedItems }) {
         axios.defaults.withCredentials = true;
         fetchAddresses();
         fetchVouchers();
-        fetchSelectedItems();
+        fetchOrderItems();
         fetchUsedVouchersToday();
     }, []);
 
     const fetchUsedVouchersToday = async () => {
         try {
-            console.log('Fetching used vouchers...');
             const response = await axios.get('/api/vouchers/used-today');
             if (response.data.status) {
                 setUsedVouchersToday(response.data.data);
             }
         } catch (error) {
             console.error('Error fetching used vouchers today:', error);
-            console.log('Error response:', error.response?.data);
         }
     };
 
-    const fetchSelectedItems = async () => {
+    const fetchOrderItems = async () => {
         try {
-            const response = await axios.get('/api/cart/selected-items', {
-                params: { selected_items: selectedItems }
+            const response = await axios.get(`/api/orders/${orderId}`, {
+                params: { include_delivery_order: true }
             });
             if (response.data.status) {
-                const items = response.data.data.items.map(item => ({
-                    cart_item_id: item.cart_item_id,
+                const items = response.data.data.order_details.map(item => ({
+                    id: item.order_detail_id,
                     image_url: item.image_url,
                     product_name: item.product_name,
                     color_name: item.color_name,
@@ -73,7 +71,7 @@ export default function Checkout({ selectedItems }) {
                 updateOrderSummary(items, null, null);
             }
         } catch (error) {
-            console.error('Error fetching selected items:', error);
+            console.error('Error fetching order items:', error);
         }
     };
 
@@ -127,7 +125,7 @@ export default function Checkout({ selectedItems }) {
                 shippingDiscount = Math.min(
                     (shipping * shippingVoucher.discount_amount / 100),
                     shippingVoucher.maximum_discount_amount,
-                    shipping // Không vượt quá phí vận chuyển
+                    shipping
                 );
             } else {
                 shippingDiscount = Math.min(
@@ -158,30 +156,28 @@ export default function Checkout({ selectedItems }) {
             const payload = {
                 address_id: selectedAddress.address_id,
                 payment_method: paymentMethod,
-                selected_items: Array.from(selectedItems),
                 note: orderNote || '',
                 price_voucher_id: priceVoucher ? priceVoucher.voucher_id : null,
                 shipping_voucher_id: shippingVoucher ? shippingVoucher.voucher_id : null
             };
-            console.log('Sending payload:', payload);
-            const response = await axios.post('/api/orders', payload);
+            const response = await axios.post(`/api/orders/${orderId}/reorder`, payload);
             if (response.data.status) {
                 if (paymentMethod === 'VNPAY') {
                     window.location.href = response.data.data.redirect_url;
                 } else {
-                    window.location.href = '/dashboard';
+                    window.location.href = '/orders';
                 }
             }
         } catch (error) {
-            console.error('Lỗi đặt hàng:', error);
-            alert(error.response?.data?.message || 'Có lỗi xảy ra khi đặt hàng');
+            console.error('Lỗi đặt lại đơn hàng:', error);
+            alert(error.response?.data?.message || 'Có lỗi xảy ra khi đặt lại đơn hàng');
         } finally {
             setIsProcessing(false);
         }
     };
 
     return (
-        <MainLayout title="Thanh toán">
+        <MainLayout title="Đặt lại đơn hàng">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-7xl mx-auto px-4 py-8">
                 <div className="md:col-span-2 space-y-6">
                     <div className="bg-white p-6 rounded-lg shadow">
@@ -208,7 +204,7 @@ export default function Checkout({ selectedItems }) {
                         <h2 className="text-lg font-medium mb-4">Sản phẩm</h2>
                         <div className="space-y-4">
                             {orderItems.map(item => (
-                                <div key={item.cart_item_id} className="flex space-x-4">
+                                <div key={item.id} className="flex space-x-4">
                                     <img
                                         src={item.image_url}
                                         alt={item.product_name}
@@ -290,7 +286,7 @@ export default function Checkout({ selectedItems }) {
                             disabled={isProcessing}
                             className="w-full mt-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
                         >
-                            {isProcessing ? 'Đang xử lý...' : paymentMethod === 'COD' ? 'Đặt hàng' : 'Thanh toán với VNPAY'}
+                            {isProcessing ? 'Đang xử lý...' : paymentMethod === 'COD' ? 'Đặt lại đơn hàng' : 'Thanh toán với VNPAY'}
                         </button>
 
                         <div className="border-t pt-4 mt-4">

@@ -12,6 +12,8 @@ use App\Http\Controllers\Admin\SalesReportController;
 
 // Route để lấy sản phẩm đã xem gần đây
 Route::get('/products/recently-viewed', [ProductController::class, 'getRecentlyViewedProducts']);
+// Route để lấy tất cả màu sắc
+Route::get('/product-colors', [ProductController::class, 'getProductColors']);
 // Slide routes - public endpoints
 Route::get('/slides', [SlideController::class, 'getSlides']);
 Route::get('/slides/{id}', [SlideController::class, 'show']);
@@ -93,3 +95,6 @@ Route::prefix('admin/sales')->group(function () {
 });
 Route::delete('/product/image/{imageId}', [ProductController::class, 'deleteProductImage'])->name('product.image.delete');
 Route::get('/categories/{id}/ancestors', [App\Http\Controllers\API\CategoryController::class, 'getCategoryAncestors']);
+
+// Reorder route
+Route::post('/orders/{id}/reorder', [App\Http\Controllers\API\OrderController::class, 'reorder']);

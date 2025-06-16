@@ -144,6 +144,14 @@ export default function OrderDetail({ auth, orderId }) {
                                         Xác nhận giao hàng
                                     </button>
                                 )}
+                                {order.order.order_status === 'COMPLETED' && (
+                                    <Link
+                                        href={route('reorder', { id: order.order.order_id })}
+                                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition duration-150"
+                                    >
+                                        Đặt lại
+                                    </Link>
+                                )}
                             </div>
                         </div>
 

@@ -26,7 +26,7 @@ Route::get('/', function () {
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
     ]);
-});
+})->name('welcome');
 
 Route::get('products/{id}', function ($id) {
     return Inertia::render('Products/Detail', [
@@ -79,6 +79,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ]);
     })->name('checkout');
 
+    // Reorder route
+    Route::get('/reorder/{id}', function ($id) {
+        return Inertia::render('Checkout/Reorder', [
+            'orderId' => $id,
+            'selectedItems' => []
+        ]);
+    })->name('reorder');
+
     Route::get('/payment/vnpay/{orderId}', function (Request $request, $orderId) {
         $order = Order::findOrFail($orderId);
         return Inertia::render('Checkout/VNPayPayment', [
@@ -125,13 +133,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/api/vouchers/available', [VoucherController::class, 'getAvailableVouchers']);
 
     // Review routes
-    Route::prefix('api/reviews')->group(function () {
-        Route::post('/', [ReviewController::class, 'store']);
-        Route::get('/user', [ReviewController::class, 'getUserReviews']);
-        Route::get('/product/{productId}', [ReviewController::class, 'getProductReviews']);
-        Route::put('/{reviewId}', [ReviewController::class, 'update']);
-        Route::delete('/{reviewId}', [ReviewController::class, 'destroy']);
-    });
+});
+
+// Review routes
+Route::prefix('api/reviews')->group(function () {
+    Route::post('/', [ReviewController::class, 'store']);
+    Route::get('/user', [ReviewController::class, 'getUserReviews']);
+    Route::get('/product/{productId}', [ReviewController::class, 'getProductReviews']);
+    Route::put('/{reviewId}', [ReviewController::class, 'update']);
+    Route::delete('/{reviewId}', [ReviewController::class, 'destroy']);
 });
 
 // Authenticated routes (require only auth, no email verification)
