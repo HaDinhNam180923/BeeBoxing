@@ -1,66 +1,148 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+Website React & Laravel với MySQL (XAMPP)
+Giới thiệu
+Đây là một ứng dụng web sử dụng React cho giao diện người dùng (frontend) và Laravel cho API cùng logic phía server (backend), với MySQL được quản lý qua XAMPP làm cơ sở dữ liệu. Dự án này nhằm cung cấp một nền tảng [mô tả ngắn về mục đích của website, ví dụ: quản lý người dùng, thương mại điện tử, blog, v.v.].
+Công nghệ sử dụng
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Frontend: React, Tailwind CSS, Axios
+Backend: Laravel, MySQL (qua XAMPP)
+Công cụ khác: Composer, Node.js, npm, XAMPP
 
-## About Laravel
+Yêu cầu hệ thống
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+XAMPP (bao gồm PHP >= 8.1, MySQL, Apache)
+Composer
+Node.js >= 16.x
+npm hoặc Yarn
+Hệ điều hành: Windows, macOS, hoặc Linux
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Hướng dẫn cài đặt
+0. Cài đặt XAMPP
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Tải và cài đặt XAMPP:
 
-## Learning Laravel
+Tải XAMPP từ trang chính thức và cài đặt theo hướng dẫn.
+Đảm bảo bật các module Apache và MySQL trong bảng điều khiển XAMPP.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+Kiểm tra MySQL:
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+Mở XAMPP Control Panel, khởi động MySQL.
+Truy cập http://localhost/phpmyadmin để kiểm tra giao diện quản lý cơ sở dữ liệu.
 
-## Laravel Sponsors
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
 
-### Premium Partners
+1. Cài đặt Backend (Laravel)
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+Clone repository:
+git clone <URL_REPOSITORY>
+cd <project-folder>
 
-## Contributing
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Cài đặt dependencies:
+composer install
 
-## Code of Conduct
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Sao chép file môi trường:
+cp .env.example .env
 
-## Security Vulnerabilities
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Cấu hình file .env:
 
-## License
+Cập nhật thông tin cơ sở dữ liệu:DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=<your_database_name>
+DB_USERNAME=root
+DB_PASSWORD=
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+Lưu ý: Mặc định, XAMPP sử dụng root làm tên người dùng MySQL và không có mật khẩu. Nếu bạn đã đặt mật khẩu, hãy cập nhật DB_PASSWORD.
+
+
+Tùy chỉnh các biến môi trường khác nếu cần (APP_URL, API keys, v.v.).
+
+
+Tạo cơ sở dữ liệu:
+
+Mở http://localhost/phpmyadmin.
+Tạo một cơ sở dữ liệu mới với tên khớp với DB_DATABASE trong file .env.
+
+
+Tạo khóa ứng dụng:
+php artisan key:generate
+
+
+Chạy migration và seed (nếu có):
+php artisan migrate --seed
+
+
+Khởi động server Laravel:
+php artisan serve
+
+Backend sẽ chạy tại http://localhost:8000 (mặc định).
+
+
+2. Cài đặt Frontend (React)
+
+Chuyển đến thư mục frontend:
+cd frontend
+
+
+Cài đặt dependencies:
+npm install
+
+
+Cấu hình API endpoint:
+
+Trong thư mục frontend, tìm file cấu hình (thường là .env).
+Cập nhật URL của backend, ví dụ:VITE_API_URL=http://localhost:8000/api
+
+
+Lưu ý: Nếu dự án sử dụng Vite, biến môi trường thường bắt đầu bằng VITE_. Kiểm tra file .env trong thư mục frontend.
+
+
+
+
+Khởi động server React:
+npm run dev
+
+Frontend sẽ chạy tại http://localhost:5173 (mặc định với Vite) hoặc một cổng khác được cấu hình trong dự án.
+
+
+3. Kiểm tra ứng dụng
+
+Mở trình duyệt và truy cập http://localhost:5173 (hoặc cổng được hiển thị sau khi chạy npm run dev) để xem giao diện frontend.
+Đảm bảo backend tại http://localhost:8000 đang hoạt động và trả về dữ liệu qua API.
+
+Gỡ lỗi thường gặp
+
+Lỗi kết nối MySQL:
+Kiểm tra Apache và MySQL đang chạy trong XAMPP.
+Đảm bảo thông tin trong .env khớp với cấu hình MySQL.
+
+
+Lỗi CORS:
+Trong Laravel, kiểm tra middleware CORS trong app/Http/Kernel.php hoặc cấu hình trong config/cors.php.
+
+
+Lỗi dependencies:
+Xóa thư mục vendor và composer.lock, sau đó chạy lại composer install.
+Tương tự, xóa node_modules và package-lock.json trong thư mục frontend, sau đó chạy npm install.
+
+
+Lỗi npm run dev:
+Đảm bảo bạn đang ở thư mục frontend.
+Kiểm tra file package.json để xác nhận script dev tồn tại (thường liên quan đến Vite hoặc Webpack).
+
+
+
+Đóng góp
+
+Fork repository.
+Tạo branch mới (git checkout -b feature/ten-tinh-nang).
+Commit thay đổi (git commit -m 'Thêm tính năng XYZ').
+Push lên branch (git push origin feature/ten-tinh-nang).
+Tạo Pull Request.
+
+Liên hệ
+Nếu bạn có câu hỏi hoặc cần hỗ trợ, liên hệ qua [email hoặc kênh liên lạc khác].
