@@ -13,6 +13,7 @@ use App\Models\Order;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Controllers\API\ReviewController;
 use App\Http\Controllers\Admin\ShipperController;
+use App\Http\Controllers\Admin\OrderManageController;
 
 // Đặt route VNPay return đầu tiên để tránh bị ghi đè
 Route::get('/payment/vnpay/return', [OrderController::class, 'handleVNPayReturn'])
@@ -237,10 +238,18 @@ Route::middleware('auth')->group(function () {
 
     // Admin order API routes
     Route::prefix('api')->group(function () {
-        Route::get('/admin/orders', [App\Http\Controllers\Admin\OrderManageController::class, 'index']);
-        Route::get('/admin/orders/{id}', [App\Http\Controllers\Admin\OrderManageController::class, 'show']);
-        Route::put('/admin/orders/{id}/status', [App\Http\Controllers\Admin\OrderManageController::class, 'updateStatus']);
+        Route::get('/admin/orders', [OrderManageController::class, 'index']);
+        Route::get('/admin/orders/{id}', [OrderManageController::class, 'show']);
+        Route::put('/admin/orders/{id}/status', [OrderManageController::class, 'updateStatus']);
+        Route::post('/admin/orders/{id}/delivery', [OrderManageController::class, 'createDeliveryOrder']);
+        Route::put('/admin/orders/{id}/return', [OrderManageController::class, 'updateReturnStatus']);
+        Route::post('/admin/orders/{id}/return/complete', [OrderManageController::class, 'completeReturn']);
     });
+
+    // User return routes
+    Route::get('/api/orders/{id}/return', [OrderController::class, 'getReturnDetails']);
+    Route::post('/api/orders/{id}/return', [OrderController::class, 'requestReturn']);
+    Route::post('/api/orders/{id}/return/cancel', [OrderController::class, 'cancelReturn']);
 
     // Shipper dashboard routes
     Route::prefix('shipper')->group(function () {

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\DeliveryOrder;
+use App\Models\OrderDetail;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -19,6 +20,10 @@ class OrderManageController extends Controller
 
             if ($request->has('status') && $request->status != 'all') {
                 $query->where('order_status', $request->status);
+            }
+
+            if ($request->has('return_status') && $request->return_status != 'all') {
+                $query->where('return_status', $request->return_status);
             }
 
             if ($request->has('search') && !empty($request->search)) {
@@ -63,8 +68,9 @@ class OrderManageController extends Controller
             $order = Order::with([
                 'user',
                 'address',
-                'voucher',
-                'deliveryOrder', // Load delivery order
+                'priceVoucher',
+                'shippingVoucher',
+                'deliveryOrder',
                 'orderDetails.inventory.color' => function ($query) {
                     $query->with(['images', 'product']);
                 }
@@ -88,7 +94,7 @@ class OrderManageController extends Controller
     {
         try {
             $request->validate([
-                'order_status' => 'required|in:CONFIRMED,CANCELLED', // Chỉ cho phép CONFIRMED và CANCELLED
+                'order_status' => 'required|in:CONFIRMED,CANCELLED',
             ]);
 
             DB::beginTransaction();
@@ -116,7 +122,8 @@ class OrderManageController extends Controller
             $order->load([
                 'user',
                 'address',
-                'voucher',
+                'priceVoucher',
+                'shippingVoucher',
                 'deliveryOrder',
                 'orderDetails.inventory.color' => function ($query) {
                     $query->with(['images', 'product']);
@@ -144,7 +151,7 @@ class OrderManageController extends Controller
     private function validateStatusTransition($oldStatus, $newStatus)
     {
         $validTransitions = [
-            'PENDING' => ['CONFIRMED', 'CANCELLED'], // Chỉ cho phép từ PENDING
+            'PENDING' => ['CONFIRMED', 'CANCELLED'],
         ];
 
         return in_array($newStatus, $validTransitions[$oldStatus] ?? []);
@@ -170,7 +177,6 @@ class OrderManageController extends Controller
 
             DB::beginTransaction();
 
-            // Sinh mã vận đơn tự động
             $trackingNumber = 'SHP' . now()->format('YmdHis') . mt_rand(1000, 9999);
             while (DeliveryOrder::where('tracking_number', $trackingNumber)->exists()) {
                 $trackingNumber = 'SHP' . now()->format('YmdHis') . mt_rand(1000, 9999);
@@ -202,6 +208,127 @@ class OrderManageController extends Controller
         }
     }
 
+    public function updateReturnStatus(Request $request, $orderId)
+    {
+        try {
+            $request->validate([
+                'return_status' => 'required|in:APPROVED,REJECTED',
+                'admin_note' => 'nullable|string|max:255',
+            ]);
+
+            DB::beginTransaction();
+
+            $order = Order::with(['orderDetails.inventory'])->findOrFail($orderId);
+
+            if (!$order->return_status || $order->return_status !== 'PENDING') {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Đơn hàng không có yêu cầu trả hàng hoặc trạng thái không phù hợp'
+                ], 422);
+            }
+
+            $newStatus = $request->return_status;
+
+            if ($newStatus === 'REJECTED') {
+                $order->orderDetails->each(function ($detail) {
+                    if ($detail->return_quantity > 0) {
+                        $detail->update(['return_quantity' => 0]);
+                    }
+                });
+            }
+
+            $order->update([
+                'return_status' => $newStatus,
+                'return_note' => $order->return_note . ($request->admin_note ? ' | Admin: ' . $request->admin_note : ''),
+            ]);
+
+            $order->load([
+                'user',
+                'address',
+                'priceVoucher',
+                'shippingVoucher',
+                'deliveryOrder',
+                'orderDetails.inventory.color' => function ($query) {
+                    $query->with(['images', 'product']);
+                }
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => $newStatus === 'APPROVED' ? 'Duyệt yêu cầu trả hàng thành công' : 'Từ chối yêu cầu trả hàng thành công',
+                'data' => $order
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Lỗi khi cập nhật trạng thái trả hàng: ' . $e->getMessage());
+            return response()->json([
+                'status' => false,
+                'message' => 'Lỗi khi cập nhật trạng thái trả hàng',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function completeReturn(Request $request, $orderId)
+    {
+        try {
+            $request->validate([
+                'admin_note' => 'nullable|string|max:255',
+            ]);
+
+            DB::beginTransaction();
+
+            $order = Order::with(['orderDetails.inventory'])->findOrFail($orderId);
+
+            if ($order->return_status !== 'APPROVED') {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Yêu cầu trả hàng chưa được duyệt hoặc trạng thái không phù hợp'
+                ], 422);
+            }
+
+            foreach ($order->orderDetails as $detail) {
+                if ($detail->return_quantity > 0) {
+                    $detail->inventory->increment('stock_quantity', $detail->return_quantity);
+                }
+            }
+
+            $order->update([
+                'return_status' => 'COMPLETED',
+                'return_note' => $order->return_note . ($request->admin_note ? ' | Admin: ' . $request->admin_note : ''),
+            ]);
+
+            $order->load([
+                'user',
+                'address',
+                'priceVoucher',
+                'shippingVoucher',
+                'deliveryOrder',
+                'orderDetails.inventory.color' => function ($query) {
+                    $query->with(['images', 'product']);
+                }
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Hoàn tất trả hàng thành công',
+                'data' => $order
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Lỗi khi hoàn tất trả hàng: ' . $e->getMessage());
+            return response()->json([
+                'status' => false,
+                'message' => 'Lỗi khi hoàn tất trả hàng',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function statistics()
     {
         try {
@@ -212,6 +339,9 @@ class OrderManageController extends Controller
                 'delivering' => Order::where('order_status', 'DELIVERING')->count(),
                 'completed' => Order::where('order_status', 'COMPLETED')->count(),
                 'cancelled' => Order::where('order_status', 'CANCELLED')->count(),
+                'returns_pending' => Order::where('return_status', 'PENDING')->count(),
+                'returns_approved' => Order::where('return_status', 'APPROVED')->count(),
+                'returns_completed' => Order::where('return_status', 'COMPLETED')->count(),
                 'revenue' => Order::where('order_status', 'COMPLETED')
                     ->where('payment_status', 'PAID')
                     ->sum('final_amount'),

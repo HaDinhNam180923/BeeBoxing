@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\VoucherController;
 use App\Http\Controllers\Admin\OrderManageController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\API\SlideController;
+use App\Http\Controllers\API\OrderController;
 use App\Http\Controllers\Admin\SalesReportController;
 
 // Route để lấy sản phẩm đã xem gần đây
@@ -97,4 +98,4 @@ Route::delete('/product/image/{imageId}', [ProductController::class, 'deleteProd
 Route::get('/categories/{id}/ancestors', [App\Http\Controllers\API\CategoryController::class, 'getCategoryAncestors']);
 
 // Reorder route
-Route::post('/orders/{id}/reorder', [App\Http\Controllers\API\OrderController::class, 'reorder']);
+Route::post('/orders/{id}/reorder', [OrderController::class, 'reorder']);

@@ -16,12 +16,16 @@ export default function OrderIndex({ auth }) {
             CONFIRMED: 0,
             DELIVERING: 0,
             COMPLETED: 0,
-            CANCELLED: 0
+            CANCELLED: 0,
+            RETURNED: 0
         };
 
         orders.forEach(order => {
             if (counts.hasOwnProperty(order.order_status)) {
                 counts[order.order_status]++;
+            }
+            if (order.return_status) {
+                counts.RETURNED++;
             }
         });
 
@@ -34,10 +38,12 @@ export default function OrderIndex({ auth }) {
         { id: 'CONFIRMED', label: 'Đã xác nhận' },
         { id: 'DELIVERING', label: 'Đang giao' },
         { id: 'COMPLETED', label: 'Hoàn thành' },
-        { id: 'CANCELLED', label: 'Đã hủy' }
+        { id: 'CANCELLED', label: 'Đã hủy' },
+        { id: 'RETURNED', label: 'Đã trả hàng' }
     ];
 
     useEffect(() => {
+        axios.defaults.withCredentials = true; // Gửi cookie session
         fetchOrders();
     }, []);
 
@@ -63,8 +69,22 @@ export default function OrderIndex({ auth }) {
         }
     };
 
+    const getReturnStatusColor = (status) => {
+        switch (status) {
+            case 'PENDING': return 'bg-orange-100 text-orange-800';
+            case 'APPROVED': return 'bg-blue-100 text-blue-800';
+            case 'REJECTED': return 'bg-red-100 text-red-800';
+            case 'COMPLETED': return 'bg-green-100 text-green-800';
+            default: return 'bg-gray-100 text-gray-800';
+        }
+    };
+
     const filteredOrders = activeTab === 'ALL' 
         ? orders 
+        : activeTab === 'RETURNED'
+        ? orders.filter(order => order.return_status)
+        : activeTab === 'COMPLETED'
+        ? orders.filter(order => order.order_status === 'COMPLETED' && !order.return_status) // Loại bỏ đơn hàng trả hàng
         : orders.filter(order => order.order_status === activeTab);
 
     const statusCounts = getStatusCounts();
@@ -131,7 +151,7 @@ export default function OrderIndex({ auth }) {
                                                 <p className="text-sm text-gray-500 mt-1">
                                                     Đặt ngày {new Date(order.order_date).toLocaleDateString('vi-VN')}
                                                 </p>
-                                                <div className="mt-2">
+                                                <div className="mt-2 flex space-x-2">
                                                     <span 
                                                         className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(order.order_status)}`}
                                                     >
@@ -141,6 +161,16 @@ export default function OrderIndex({ auth }) {
                                                          order.order_status === 'COMPLETED' ? 'Hoàn thành' :
                                                          order.order_status === 'CANCELLED' ? 'Đã hủy' : order.order_status}
                                                     </span>
+                                                    {order.return_status && (
+                                                        <span 
+                                                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getReturnStatusColor(order.return_status)}`}
+                                                        >
+                                                            {order.return_status === 'PENDING' ? 'Yêu cầu trả: Chờ duyệt' :
+                                                             order.return_status === 'APPROVED' ? 'Yêu cầu trả: Đã duyệt' :
+                                                             order.return_status === 'REJECTED' ? 'Yêu cầu trả: Bị từ chối' :
+                                                             order.return_status === 'COMPLETED' ? 'Yêu cầu trả: Hoàn tất' : 'Trả hàng'}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                             

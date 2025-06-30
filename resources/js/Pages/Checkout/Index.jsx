@@ -16,6 +16,12 @@ export default function Checkout({ selectedItems }) {
     const [isProcessing, setIsProcessing] = useState(false);
     const [orderItems, setOrderItems] = useState([]);
     const [usedVouchersToday, setUsedVouchersToday] = useState([]);
+    // Thêm state cho Alert
+    const [alert, setAlert] = useState({
+        isVisible: false,
+        message: '',
+        variant: 'success'
+    });
     const [orderSummary, setOrderSummary] = useState({
         subtotal: 0,
         shipping: 30000,
@@ -30,6 +36,55 @@ export default function Checkout({ selectedItems }) {
             minimumFractionDigits: 0,
             maximumFractionDigits: 0
         });
+    };
+
+    // Hàm hiển thị thông báo
+    const showAlert = (message, variant = 'success') => {
+        setAlert({ isVisible: true, message, variant });
+        setTimeout(() => {
+            setAlert(prev => ({ ...prev, isVisible: false }));
+        }, 3000);
+    };
+
+    // Component Alert
+    const Alert = ({ isVisible, message, variant = "success", onClose }) => {
+        if (!isVisible) return null;
+
+        const variants = {
+            success: "bg-green-50 text-green-800 border-green-200",
+            error: "bg-red-50 text-red-800 border-red-200",
+            info: "bg-blue-50 text-blue-800 border-blue-200",
+        };
+
+        return (
+            <div className={`fixed top-4 right-4 max-w-sm w-full z-50 transition-all duration-300 transform ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'}`}>
+                <div className={`border rounded-lg p-4 shadow-lg ${variants[variant]}`}>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            {variant === 'success' && (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                </svg>
+                            )}
+                            {variant === 'error' && (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            )}
+                            <p className="text-sm font-medium">{message}</p>
+                        </div>
+                        <button 
+                            onClick={onClose}
+                            className="text-current hover:text-gray-600"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
     };
 
     useEffect(() => {
@@ -149,7 +204,7 @@ export default function Checkout({ selectedItems }) {
 
     const handlePlaceOrder = async () => {
         if (!selectedAddress) {
-            alert('Vui lòng chọn địa chỉ giao hàng');
+            showAlert('Vui lòng chọn địa chỉ giao hàng', 'error');
             return;
         }
 
@@ -169,12 +224,15 @@ export default function Checkout({ selectedItems }) {
                 if (paymentMethod === 'VNPAY') {
                     window.location.href = response.data.data.redirect_url;
                 } else {
-                    window.location.href = '/dashboard';
+                    showAlert('Đặt hàng thành công! Đơn hàng sẽ được giao đến bạn sớm.', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/dashboard';
+                    }, 2000);
                 }
             }
         } catch (error) {
             console.error('Lỗi đặt hàng:', error);
-            alert(error.response?.data?.message || 'Có lỗi xảy ra khi đặt hàng');
+            showAlert(error.response?.data?.message || 'Có lỗi xảy ra khi đặt hàng', 'error');
         } finally {
             setIsProcessing(false);
         }
@@ -529,6 +587,13 @@ export default function Checkout({ selectedItems }) {
                         </div>
                     </div>
                 </Modal>
+
+                <Alert
+                    isVisible={alert.isVisible}
+                    message={alert.message}
+                    variant={alert.variant}
+                    onClose={() => setAlert(prev => ({ ...prev, isVisible: false }))}
+                />
             </div>
         </MainLayout>
     );

@@ -564,6 +564,7 @@ class OrderController extends Controller
                         'final_amount' => $order->final_amount,
                         'order_status' => $order->order_status,
                         'payment_status' => $order->payment_status,
+                        'return_status' => $order->return_status, // Thêm return_status
                         'total_items' => $order->orderDetails->sum('quantity'),
                         'items' => $order->orderDetails->map(function ($detail) {
                             $product = $detail->inventory->color->product;
@@ -632,7 +633,8 @@ class OrderController extends Controller
                     'quantity' => $detail->quantity,
                     'unit_price' => $detail->unit_price,
                     'subtotal' => $detail->subtotal,
-                    'image_url' => $color->images->first()->image_url ?? null
+                    'image_url' => $color->images->first()->image_url ?? null,
+                    'return_quantity' => $detail->return_quantity
                 ];
             });
 
@@ -651,12 +653,16 @@ class OrderController extends Controller
                         'payment_status' => $order->payment_status,
                         'order_status' => $order->order_status,
                         'note' => $order->note,
+                        'return_status' => $order->return_status,
+                        'return_note' => $order->return_note,
+                        'return_images' => $order->return_images,
                         'address' => $order->address,
                         'price_voucher' => $order->priceVoucher,
                         'shipping_voucher' => $order->shippingVoucher,
                         'delivery_order' => $includeDeliveryOrder && $order->deliveryOrder ? [
                             'delivery_order_id' => $order->deliveryOrder->delivery_order_id,
-                            'status' => $order->deliveryOrder->status
+                            'status' => $order->deliveryOrder->status,
+                            'delivered_at' => $order->deliveryOrder->delivered_at ? $order->deliveryOrder->delivered_at->format('Y-m-d H:i:s') : null
                         ] : null
                     ],
                     'order_details' => $orderDetails
@@ -756,6 +762,270 @@ class OrderController extends Controller
                 'status' => false,
                 'message' => 'Lỗi khi xác nhận giao hàng',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function requestReturn(Request $request, $orderId)
+    {
+        try {
+            Log::info('Bắt đầu requestReturn', ['order_id' => $orderId, 'user_id' => Auth::id(), 'data' => $request->all()]);
+
+            $validated = $request->validate([
+                'order_detail_ids' => 'required|array',
+                'order_detail_ids.*' => 'exists:order_details,order_detail_id',
+                'quantities' => 'required|array',
+                'quantities.*' => 'integer|min:1',
+                'reason' => 'required|string|in:DEFECTIVE,WRONG_ITEM,CHANGE_MIND,OTHER',
+                'note' => 'nullable|string|max:255',
+                'images' => 'nullable|array',
+                'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048'
+            ]);
+
+            $userId = Auth::id();
+
+            DB::beginTransaction();
+
+            $order = Order::where('order_id', $orderId)
+                ->where('user_id', $userId)
+                ->where('order_status', 'COMPLETED')
+                ->with(['deliveryOrder', 'orderDetails'])
+                ->first();
+
+            if (!$order) {
+                Log::warning('Không tìm thấy đơn hàng', ['order_id' => $orderId, 'user_id' => $userId]);
+                DB::rollBack();
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Không tìm thấy đơn hàng hoặc đơn hàng chưa hoàn thành'
+                ], 404);
+            }
+
+            // Kiểm tra 7 ngày từ delivered_at
+            if (!$order->deliveryOrder || !$order->deliveryOrder->delivered_at) {
+                Log::warning('Đơn hàng chưa được giao', ['order_id' => $orderId]);
+                DB::rollBack();
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Đơn hàng chưa được giao'
+                ], 422);
+            }
+
+            $deliveredAt = Carbon::parse($order->deliveryOrder->delivered_at);
+            if ($deliveredAt->diffInDays(now()) > 7) {
+                Log::warning('Quá 7 ngày từ khi nhận hàng', ['order_id' => $orderId, 'delivered_at' => $order->deliveryOrder->delivered_at]);
+                DB::rollBack();
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Đã quá 7 ngày kể từ khi nhận hàng, không thể yêu cầu trả'
+                ], 422);
+            }
+
+            // Kiểm tra yêu cầu trả hàng trước đó
+            if ($order->return_status) {
+                Log::warning('Đơn hàng đã có yêu cầu trả hàng', ['order_id' => $orderId, 'return_status' => $order->return_status]);
+                DB::rollBack();
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Đơn hàng đã có yêu cầu trả hàng'
+                ], 422);
+            }
+
+            // Kiểm tra order_detail_ids và quantities
+            if (count($validated['order_detail_ids']) !== count($validated['quantities'])) {
+                Log::warning('Số lượng không khớp', ['order_id' => $orderId, 'detail_ids' => $validated['order_detail_ids'], 'quantities' => $validated['quantities']]);
+                DB::rollBack();
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Số lượng không khớp với danh sách sản phẩm'
+                ], 422);
+            }
+
+            $orderDetails = $order->orderDetails->keyBy('order_detail_id');
+            foreach ($validated['order_detail_ids'] as $index => $detailId) {
+                if (!isset($orderDetails[$detailId])) {
+                    Log::warning('Sản phẩm không thuộc đơn hàng', ['order_id' => $orderId, 'detail_id' => $detailId]);
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => false,
+                        'message' => "Sản phẩm ID {$detailId} không thuộc đơn hàng"
+                    ], 422);
+                }
+
+                $quantity = $validated['quantities'][$index];
+                if ($quantity > $orderDetails[$detailId]->quantity) {
+                    Log::warning('Số lượng trả vượt quá mua', ['order_id' => $orderId, 'detail_id' => $detailId, 'return_quantity' => $quantity, 'ordered_quantity' => $orderDetails[$detailId]->quantity]);
+                    DB::rollBack();
+                    return response()->json([
+                        'status' => false,
+                        'message' => "Số lượng trả cho sản phẩm ID {$detailId} vượt quá số lượng mua"
+                    ], 422);
+                }
+            }
+
+            // Lưu hình ảnh
+            $imageUrls = [];
+            if ($request->hasFile('images')) {
+                foreach ($request->file('images') as $image) {
+                    $path = $image->store('return_images', 'public');
+                    $imageUrls[] = url('storage/' . $path);
+                }
+            }
+
+            // Cập nhật Order
+            $order->update([
+                'return_status' => 'PENDING',
+                'return_note' => $validated['reason'] . ($validated['note'] ? ': ' . $validated['note'] : ''),
+                'return_images' => $imageUrls
+            ]);
+
+            // Cập nhật OrderDetail
+            foreach ($validated['order_detail_ids'] as $index => $detailId) {
+                $orderDetails[$detailId]->update([
+                    'return_quantity' => $validated['quantities'][$index]
+                ]);
+            }
+
+            DB::commit();
+
+            Log::info('Yêu cầu trả hàng thành công', ['order_id' => $orderId]);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Yêu cầu trả hàng đã được gửi'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Return Request Error', ['error' => $e->getMessage(), 'request' => $request->all()]);
+            return response()->json([
+                'status' => false,
+                'message' => 'Có lỗi xảy ra khi gửi yêu cầu trả hàng: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getReturnDetails($orderId)
+    {
+        try {
+            Log::info('Bắt đầu getReturnDetails', ['order_id' => $orderId, 'user_id' => Auth::id()]);
+
+            $order = Order::where('order_id', $orderId)
+                ->where('user_id', Auth::id())
+                ->with(['orderDetails.inventory.color.product', 'deliveryOrder'])
+                ->first();
+
+            if (!$order) {
+                Log::warning('Không tìm thấy đơn hàng', ['order_id' => $orderId, 'user_id' => Auth::id()]);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Không tìm thấy đơn hàng'
+                ], 404);
+            }
+
+            if (!$order->return_status) {
+                return response()->json([
+                    'status' => true,
+                    'data' => null,
+                    'message' => 'Đơn hàng chưa có yêu cầu trả hàng'
+                ]);
+            }
+
+            $returnItems = $order->orderDetails->filter(function ($detail) {
+                return $detail->return_quantity > 0;
+            })->map(function ($detail) {
+                $product = $detail->inventory->color->product;
+                $color = $detail->inventory->color;
+                return [
+                    'order_detail_id' => $detail->order_detail_id,
+                    'product_id' => $product->product_id,
+                    'product_name' => $product->name,
+                    'color_name' => $color->color_name,
+                    'size' => $detail->inventory->size,
+                    'return_quantity' => $detail->return_quantity,
+                    'unit_price' => $detail->unit_price,
+                    'subtotal' => $detail->subtotal,
+                    'image_url' => $color->images->first()->image_url ?? null
+                ];
+            });
+
+            return response()->json([
+                'status' => true,
+                'data' => [
+                    'return_status' => $order->return_status,
+                    'return_note' => $order->return_note,
+                    'return_images' => $order->return_images,
+                    'return_items' => $returnItems,
+                    'delivered_at' => $order->deliveryOrder && $order->deliveryOrder->delivered_at
+                        ? $order->deliveryOrder->delivered_at->format('Y-m-d H:i:s')
+                        : null
+                ]
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get Return Details Error', ['error' => $e->getMessage(), 'order_id' => $orderId]);
+            return response()->json([
+                'status' => false,
+                'message' => 'Lỗi khi lấy thông tin trả hàng',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function cancelReturn($orderId)
+    {
+        try {
+            Log::info('Bắt đầu cancelReturn', ['order_id' => $orderId, 'user_id' => Auth::id()]);
+
+            DB::beginTransaction();
+
+            $order = Order::where('order_id', $orderId)
+                ->where('user_id', Auth::id())
+                ->with('orderDetails')
+                ->first();
+
+            if (!$order) {
+                Log::warning('Không tìm thấy đơn hàng', ['order_id' => $orderId, 'user_id' => Auth::id()]);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Không tìm thấy đơn hàng'
+                ], 404);
+            }
+
+            if ($order->return_status !== 'PENDING') {
+                Log::warning('Trạng thái trả hàng không phù hợp', ['order_id' => $orderId, 'return_status' => $order->return_status]);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Không thể hủy yêu cầu trả hàng do trạng thái không phù hợp'
+                ], 422);
+            }
+
+            // Xóa thông tin trả hàng
+            $order->update([
+                'return_status' => null,
+                'return_note' => null,
+                'return_images' => null
+            ]);
+
+            // Cập nhật return_quantity về 0
+            $order->orderDetails->each(function ($detail) {
+                if ($detail->return_quantity > 0) {
+                    $detail->update(['return_quantity' => 0]);
+                }
+            });
+
+            DB::commit();
+
+            Log::info('Hủy yêu cầu trả hàng thành công', ['order_id' => $orderId]);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Hủy yêu cầu trả hàng thành công'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Cancel Return Error', ['error' => $e->getMessage(), 'order_id' => $orderId]);
+            return response()->json([
+                'status' => false,
+                'message' => 'Lỗi khi hủy yêu cầu trả hàng: ' . $e->getMessage()
             ], 500);
         }
     }

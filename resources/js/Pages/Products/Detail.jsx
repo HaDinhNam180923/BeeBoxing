@@ -48,6 +48,47 @@ const Badge = ({ children, variant = "default", className = "" }) => {
   );
 };
 
+// New Alert Component
+const Alert = ({ isVisible, message, variant = "success", onClose }) => {
+  if (!isVisible) return null;
+
+  const variants = {
+    success: "bg-green-50 text-green-800 border-green-200",
+    error: "bg-red-50 text-red-800 border-red-200",
+    info: "bg-blue-50 text-blue-800 border-blue-200",
+  };
+
+  return (
+    <div className={`fixed top-4 right-4 max-w-sm w-full z-50 transition-all duration-300 transform ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'}`}>
+      <div className={`border rounded-lg p-4 shadow-lg ${variants[variant]}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {variant === 'success' && (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+            {variant === 'error' && (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
+            <p className="text-sm font-medium">{message}</p>
+          </div>
+          <button 
+            onClick={onClose}
+            className="text-current hover:text-gray-600"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const TabButton = ({ active, onClick, children }) => (
   <button
     onClick={onClick}
@@ -206,6 +247,21 @@ const ReviewList = ({ productId }) => {
 // Main Detail Component
 const Detail = ({ auth, id }) => {
   const { auth: pageAuth, csrf_token } = usePage().props;
+  
+  // Alert state management
+  const [alert, setAlert] = useState({
+    isVisible: false,
+    message: '',
+    variant: 'success'
+  });
+
+  // Function to show alert
+  const showAlert = (message, variant = 'success') => {
+    setAlert({ isVisible: true, message, variant });
+    setTimeout(() => {
+      setAlert(prev => ({ ...prev, isVisible: false }));
+    }, 3000);
+  };
 
   // Select layout based on authentication status
   const Layout = auth.user ? AuthenticatedLayout : GuestLayout;
@@ -224,7 +280,7 @@ const Detail = ({ auth, id }) => {
       const response = await axios.get(`/api/categories/${productResponse.data.category.category_id}/ancestors`);
       return response.data.data;
     },
-    enabled: !!productResponse?.data?.category?.category_id, // Chỉ gọi khi có category_id
+    enabled: !!productResponse?.data?.category?.category_id,
   });
 
   const ProductContent = () => {
@@ -253,8 +309,10 @@ const Detail = ({ auth, id }) => {
       if (!currentInventory || currentInventory.stock_quantity === 0) return;
 
       if (!auth.user) {
-        alert('Vui lòng đăng nhập để thêm vào giỏ hàng');
-        window.location.href = '/login';
+        showAlert('Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng', 'error');
+        setTimeout(() => {
+          window.location.href = '/login';
+        }, 2000);
         return;
       }
 
@@ -272,10 +330,10 @@ const Detail = ({ auth, id }) => {
           withCredentials: true
         });
 
-        alert('Sản phẩm đã được thêm vào giỏ hàng');
+        showAlert('Đã thêm sản phẩm vào giỏ hàng thành công!');
       } catch (error) {
         console.error('Lỗi thêm vào giỏ:', error.response?.data || error);
-        alert(error.response?.data?.message || 'Có lỗi xảy ra khi thêm vào giỏ hàng');
+        showAlert(error.response?.data?.message || 'Có lỗi xảy ra khi thêm vào giỏ hàng', 'error');
       } finally {
         setIsAddingToCart(false);
       }
@@ -474,6 +532,12 @@ const Detail = ({ auth, id }) => {
   return (
     <Layout title={productResponse?.data?.name || 'Chi tiết sản phẩm'}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Alert
+          isVisible={alert.isVisible}
+          message={alert.message}
+          variant={alert.variant}
+          onClose={() => setAlert(prev => ({ ...prev, isVisible: false }))}
+        />
         {isLoading || isLoadingCategories ? (
           <LoadingState />
         ) : error ? (

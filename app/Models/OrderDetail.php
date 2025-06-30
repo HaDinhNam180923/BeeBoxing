@@ -14,12 +14,13 @@ class OrderDetail extends Model
         'inventory_id',
         'quantity',
         'unit_price',
-        'subtotal'
+        'subtotal',
+        'return_quantity',
     ];
 
     protected $casts = [
         'unit_price' => 'decimal:2',
-        'subtotal' => 'decimal:2'
+        'subtotal' => 'decimal:2',
     ];
 
     public function order()

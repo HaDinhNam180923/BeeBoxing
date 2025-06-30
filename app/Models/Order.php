@@ -23,7 +23,10 @@ class Order extends Model
         'payment_status',
         'order_status',
         'note',
-        'tracking_number'
+        'tracking_number',
+        'return_status',
+        'return_note',
+        'return_images',
     ];
 
     protected $casts = [
@@ -31,7 +34,8 @@ class Order extends Model
         'subtotal_amount' => 'decimal:2',
         'shipping_fee' => 'decimal:2',
         'discount_amount' => 'decimal:2',
-        'final_amount' => 'decimal:2'
+        'final_amount' => 'decimal:2',
+        'return_images' => 'array',
     ];
 
     public function user()
