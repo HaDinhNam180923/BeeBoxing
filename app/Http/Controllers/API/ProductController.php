@@ -14,6 +14,9 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
+use Phpml\Math\Distance\Cosine;
+use Phpml\Metric\CosineSimilarity;
 
 class ProductController extends Controller
 {
@@ -1015,6 +1018,431 @@ class ProductController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to delete image',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getTopSellingProducts(Request $request)
+    {
+        try {
+            $limit = min(max((int)$request->input('limit', 8), 1), 20);
+
+            // Lấy sản phẩm bán chạy trực tiếp từ cơ sở dữ liệu
+            $productIds = DB::table('order_details')
+                ->join('orders', 'order_details.order_id', '=', 'orders.order_id')
+                ->join('product_inventory', 'order_details.inventory_id', '=', 'product_inventory.inventory_id')
+                ->join('product_colors', 'product_inventory.color_id', '=', 'product_colors.color_id')
+                ->select('product_colors.product_id', DB::raw('SUM(order_details.quantity) as total_sold'))
+                ->where('orders.order_date', '>=', now()->subDays(30))
+                ->where('orders.order_status', '!=', 'cancelled')
+                ->groupBy('product_colors.product_id')
+                ->orderByDesc('total_sold')
+                ->take($limit)
+                ->pluck('product_id');
+
+            $products = Product::whereIn('product_id', $productIds)
+                ->where('is_active', true)
+                ->with([
+                    'category',
+                    'colors' => function ($query) {
+                        $query->orderBy('color_name')
+                            ->with([
+                                'images' => function ($q) {
+                                    $q->orderBy('is_primary', 'desc')
+                                        ->orderBy('display_order');
+                                },
+                                'inventory' => function ($q) {
+                                    $q->orderBy('size');
+                                }
+                            ]);
+                    }
+                ])
+                ->get()
+                ->map(function ($product) {
+                    $product->final_price = $product->base_price * (1 - $product->discount / 100);
+                    $product->total_stock = $product->colors->sum(function ($color) {
+                        return $color->inventory->sum('stock_quantity');
+                    });
+
+                    if (is_string($product->specifications)) {
+                        try {
+                            $product->specifications = json_decode($product->specifications, true);
+                        } catch (\Exception $e) {
+                            $product->specifications = [];
+                        }
+                    }
+
+                    $product->colors->transform(function ($color) {
+                        $color->primary_image = $color->images->where('is_primary', true)->first()
+                            ?: ($color->images->first() ?: ['image_url' => '/storage/products/default.jpg']);
+                        $color->inventory = $color->inventory->map(function ($inv) {
+                            return [
+                                'inventory_id' => $inv->inventory_id,
+                                'size' => $inv->size,
+                                'stock_quantity' => (int)$inv->stock_quantity,
+                                'price_adjustment' => (float)$inv->price_adjustment
+                            ];
+                        });
+                        return $color;
+                    });
+
+                    return $product;
+                });
+
+            return response()->json([
+                'status' => true,
+                'data' => $products
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error in getTopSellingProducts: ' . $e->getMessage());
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to retrieve top selling products',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getMostViewedProducts(Request $request)
+    {
+        try {
+            $limit = min(max((int)$request->input('limit', 8), 1), 20);
+
+            // Lấy sản phẩm xem nhiều trực tiếp từ cơ sở dữ liệu
+            $products = Product::where('is_active', true)
+                ->orderBy('view_count', 'desc')
+                ->take($limit)
+                ->with([
+                    'category',
+                    'colors' => function ($query) {
+                        $query->orderBy('color_name')
+                            ->with([
+                                'images' => function ($q) {
+                                    $q->orderBy('is_primary', 'desc')
+                                        ->orderBy('display_order');
+                                },
+                                'inventory' => function ($q) {
+                                    $q->orderBy('size');
+                                }
+                            ]);
+                    }
+                ])
+                ->get()
+                ->map(function ($product) {
+                    $product->final_price = $product->base_price * (1 - $product->discount / 100);
+                    $product->total_stock = $product->colors->sum(function ($color) {
+                        return $color->inventory->sum('stock_quantity');
+                    });
+
+                    if (is_string($product->specifications)) {
+                        try {
+                            $product->specifications = json_decode($product->specifications, true);
+                        } catch (\Exception $e) {
+                            $product->specifications = [];
+                        }
+                    }
+
+                    $product->colors->transform(function ($color) {
+                        $color->primary_image = $color->images->where('is_primary', true)->first()
+                            ?: ($color->images->first() ?: ['image_url' => '/storage/products/default.jpg']);
+                        $color->inventory = $color->inventory->map(function ($inv) {
+                            return [
+                                'inventory_id' => $inv->inventory_id,
+                                'size' => $inv->size,
+                                'stock_quantity' => (int)$inv->stock_quantity,
+                                'price_adjustment' => (float)$inv->price_adjustment
+                            ];
+                        });
+                        return $color;
+                    });
+
+                    return $product;
+                });
+
+            return response()->json([
+                'status' => true,
+                'data' => $products
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error in getMostViewedProducts: ' . $e->getMessage());
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to retrieve most viewed products',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    private function calculateCosineSimilarity(array $vectorA, array $vectorB)
+    {
+        $meanA = array_sum($vectorA) / count($vectorA);
+        $meanB = array_sum($vectorB) / count($vectorB);
+
+        $dotProduct = 0;
+        $normA = 0;
+        $normB = 0;
+
+        foreach ($vectorA as $index => $valueA) {
+            $valueB = $vectorB[$index] ?? 0;
+
+            $centeredA = $valueA - $meanA;
+            $centeredB = $valueB - $meanB;
+
+            $dotProduct += $centeredA * $centeredB;
+            $normA += $centeredA * $centeredA;
+            $normB += $centeredB * $centeredB;
+        }
+
+        $normA = sqrt($normA);
+        $normB = sqrt($normB);
+
+        return ($normA > 0 && $normB > 0) ? $dotProduct / ($normA * $normB) : 0;
+    }
+
+
+    public function getUserBasedRecommendations(Request $request)
+    {
+        try {
+            // Kiểm tra người dùng đã đăng nhập
+            if (!Auth::check()) {
+                Log::info('User not authenticated for recommendations');
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Vui lòng đăng nhập để nhận gợi ý cá nhân hóa'
+                ], 401);
+            }
+
+            $userId = Auth::id();
+            $limit = min(max((int)$request->input('limit', 8), 1), 50);
+            Log::info('Fetching user-based recommendations', ['user_id' => $userId, 'limit' => $limit]);
+
+            // Tạm thời vô hiệu hóa cache để debug
+            Log::info('Starting recommendation calculation');
+
+            // Bước 1: Lấy sản phẩm mà user_id đã mua
+            Log::info('Fetching products purchased by user', ['user_id' => $userId]);
+            $userProducts = DB::table('orders')
+                ->select('pc.product_id')
+                ->join('order_details', 'orders.order_id', '=', 'order_details.order_id')
+                ->join('product_inventory as pi', 'order_details.inventory_id', '=', 'pi.inventory_id')
+                ->join('product_colors as pc', 'pi.color_id', '=', 'pc.color_id')
+                ->where('orders.user_id', $userId)
+                ->where('orders.order_date', '>=', now()->subDays(30))
+                ->groupBy('pc.product_id')
+                ->pluck('product_id')
+                ->toArray();
+
+            if (empty($userProducts)) {
+                Log::warning('No purchase history for user', ['user_id' => $userId]);
+                return $this->getFallbackProducts(null, $limit);
+            }
+
+            Log::info('User products retrieved', ['user_id' => $userId, 'product_ids' => $userProducts]);
+
+            // Bước 2: Lấy tất cả sản phẩm từ đơn hàng trong 30 ngày qua
+            Log::info('Fetching all purchased products in last 30 days');
+            $allProducts = DB::table('orders')
+                ->select('pc.product_id')
+                ->join('order_details', 'orders.order_id', '=', 'order_details.order_id')
+                ->join('product_inventory as pi', 'order_details.inventory_id', '=', 'pi.inventory_id')
+                ->join('product_colors as pc', 'pi.color_id', '=', 'pc.color_id')
+                ->where('orders.order_date', '>=', now()->subDays(30))
+                ->groupBy('pc.product_id')
+                ->pluck('product_id')
+                ->toArray();
+
+            // Kết hợp sản phẩm của user_id và các sản phẩm khác, giới hạn tối đa 20 sản phẩm
+            $productIds = array_unique(array_merge($userProducts, $allProducts));
+            $productIds = array_slice($productIds, 0, 50); // Giới hạn 20 sản phẩm để tránh ma trận quá lớn
+            Log::info('All products selected', ['product_ids' => $productIds]);
+
+            // Bước 3: Lấy dữ liệu mua hàng của tất cả người dùng cho các sản phẩm
+            Log::info('Fetching user orders for selected products');
+            $userOrders = DB::table('orders')
+                ->select('orders.user_id', 'order_details.order_id', 'pc.product_id', 'order_details.quantity')
+                ->join('order_details', 'orders.order_id', '=', 'order_details.order_id')
+                ->join('product_inventory as pi', 'order_details.inventory_id', '=', 'pi.inventory_id')
+                ->join('product_colors as pc', 'pi.color_id', '=', 'pc.color_id')
+                ->where('orders.order_date', '>=', now()->subDays(30))
+                ->whereIn('pc.product_id', $productIds)
+                ->get();
+
+            if ($userOrders->isEmpty()) {
+                Log::warning('No orders found for selected products in the last 30 days');
+                return $this->getFallbackProducts(null, $limit);
+            }
+
+            Log::info('User orders retrieved', ['order_count' => $userOrders->count()]);
+
+            // Bước 4: Xây dựng ma trận người dùng-sản phẩm
+            $userVectors = [];
+            foreach ($userOrders as $order) {
+                $uId = $order->user_id;
+                $pId = $order->product_id;
+                if (!isset($userVectors[$uId])) {
+                    $userVectors[$uId] = array_fill(0, count($productIds), 0);
+                }
+                $index = array_search($pId, $productIds);
+                if ($index !== false) {
+                    $userVectors[$uId][$index] = ($userVectors[$uId][$index] ?? 0) + $order->quantity;
+                }
+            }
+
+            Log::info('User vectors built', ['user_count' => count($userVectors), 'product_count' => count($productIds), 'vectors' => $userVectors]);
+
+            // Bước 5: Tính cosine similarity thủ công
+            $similarities = [];
+            if (isset($userVectors[$userId])) {
+                Log::info('Calculating similarities for user', ['user_id' => $userId]);
+                $targetVector = $userVectors[$userId];
+                foreach ($userVectors as $otherUserId => $vector) {
+                    if ($otherUserId == $userId) {
+                        continue;
+                    }
+                    $similarity = $this->calculateCosineSimilarity($targetVector, $vector);
+                    if ($similarity > 0.3) { // Ngưỡng 0.3 để chọn người dùng tương tự chất lượng cao
+                        $similarities[$otherUserId] = $similarity;
+                    }
+                }
+            } else {
+                Log::warning('No purchase history for user in selected products', ['user_id' => $userId]);
+                return $this->getFallbackProducts(null, $limit);
+            }
+
+            Log::info('Similarities calculated', ['similar_user_count' => count($similarities), 'similarities' => $similarities]);
+
+            // Sắp xếp và chọn top K người dùng tương tự (K=5)
+            arsort($similarities);
+            $similarUserIds = array_slice(array_keys($similarities), 0, 5);
+
+            Log::info('Top similar users', ['similar_user_ids' => $similarUserIds]);
+
+            // Bước 6: Lấy sản phẩm mà người dùng tương tự đã mua nhưng người dùng hiện tại chưa mua
+            $userProducts = [];
+            if (isset($userVectors[$userId])) {
+                foreach ($productIds as $index => $pId) {
+                    if ($userVectors[$userId][$index] > 0) {
+                        $userProducts[] = $pId;
+                    }
+                }
+            }
+
+            Log::info('User products identified', ['user_id' => $userId, 'products' => $userProducts]);
+
+            $recommendedProductIds = [];
+            $productScores = [];
+            foreach ($similarUserIds as $similarUserId) {
+                $similarityScore = $similarities[$similarUserId];
+                foreach ($productIds as $index => $pId) {
+                    if ($userVectors[$similarUserId][$index] > 0 && !in_array($pId, $userProducts) && !in_array($pId, $recommendedProductIds)) {
+                        $productScores[$pId] = ($productScores[$pId] ?? 0) + $similarityScore;
+                        $recommendedProductIds[] = $pId;
+                        if (count($recommendedProductIds) >= $limit) {
+                            break;
+                        }
+                    }
+                }
+                if (count($recommendedProductIds) >= $limit) {
+                    break;
+                }
+            }
+
+            Log::info('Recommended products', ['product_ids' => $recommendedProductIds, 'scores' => $productScores]);
+
+            // Sắp xếp sản phẩm theo điểm số
+            $sortedProductIds = collect($recommendedProductIds)->sortByDesc(function ($pId) use ($productScores) {
+                return $productScores[$pId] ?? 0;
+            })->take($limit)->values()->toArray();
+
+            // Nếu không đủ sản phẩm, bổ sung từ getFallbackProducts
+            if (count($sortedProductIds) < $limit) {
+                Log::info('Supplementing with fallback products', ['missing' => $limit - count($sortedProductIds)]);
+                $fallbackProducts = $this->getFallbackProducts(null, $limit - count($sortedProductIds));
+                $sortedProductIds = array_merge(
+                    $sortedProductIds,
+                    $fallbackProducts->pluck('product_id')->toArray()
+                );
+            }
+
+            Log::info('Final product IDs', ['sorted_product_ids' => $sortedProductIds]);
+
+            // Bước 7: Lấy chi tiết sản phẩm
+            $products = Product::whereIn('product_id', $sortedProductIds)
+                ->where('is_active', true)
+                ->with([
+                    'category',
+                    'colors' => function ($query) {
+                        $query->orderBy('color_name')
+                            ->with([
+                                'images' => function ($q) {
+                                    $q->orderBy('is_primary', 'desc')
+                                        ->orderBy('display_order');
+                                },
+                                'inventory' => function ($q) {
+                                    $q->orderBy('size');
+                                }
+                            ]);
+                    }
+                ])
+                ->get();
+
+            // Bước 8: Chuẩn hóa dữ liệu
+            $products = $products->map(function ($product) {
+                $product->final_price = $product->base_price * (1 - $product->discount / 100);
+                $product->total_stock = $product->colors->sum(function ($color) {
+                    return $color->inventory->sum('stock_quantity');
+                });
+
+                if (is_string($product->specifications)) {
+                    try {
+                        $product->specifications = json_decode($product->specifications, true);
+                    } catch (\Exception $e) {
+                        $product->specifications = [];
+                    }
+                }
+
+                $product->colors->transform(function ($color) {
+                    $color->primary_image = $color->images->where('is_primary', true)->first()
+                        ?: ($color->images->first() ?: ['image_url' => '/storage/products/default.jpg']);
+                    $color->inventory = $color->inventory->map(function ($inv) {
+                        return [
+                            'inventory_id' => $inv->inventory_id,
+                            'size' => $inv->size,
+                            'stock_quantity' => (int)$inv->stock_quantity,
+                            'price_adjustment' => (float)$inv->price_adjustment
+                        ];
+                    });
+                    return $color;
+                });
+
+                return $product;
+            });
+
+            Log::info('Products prepared for response', ['product_count' => $products->count()]);
+
+            // Sắp xếp theo thứ tự điểm số
+            $result = collect($sortedProductIds)
+                ->map(function ($id) use ($products) {
+                    return $products->firstWhere('product_id', $id);
+                })
+                ->filter()
+                ->values();
+
+            Log::info('Recommendations retrieved', ['product_count' => $result->count()]);
+
+            return response()->json([
+                'status' => true,
+                'data' => $result
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error in getUserBasedRecommendations: ' . $e->getMessage(), [
+                'user_id' => $userId ?? null,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Đã xảy ra lỗi khi lấy gợi ý sản phẩm',
                 'error' => $e->getMessage()
             ], 500);
         }

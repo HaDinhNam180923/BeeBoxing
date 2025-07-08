@@ -1,4 +1,3 @@
-// resources/js/Components/CartDrawer.jsx
 import React, { useState, useEffect } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import { Link } from '@inertiajs/react';
@@ -132,7 +131,7 @@ export default function CartDrawer({ isOpen, onClose }) {
           ) : (
             <>
               {/* Items */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-32">  {/* Thêm pb-32 để tạo padding dưới */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-32">
                 {/* Select all */}
                 <div className="flex items-center mb-4">
                   <input
@@ -168,7 +167,11 @@ export default function CartDrawer({ isOpen, onClose }) {
                     </div>
 
                     <div className="flex-1">
-                      <h3 className="font-medium text-sm">{item.product_name}</h3>
+                      <h3 className="font-medium text-sm text-gray-900 hover:text-blue-600">
+                        <Link href={route('products.detail', item.product_id)}>
+                          {item.product_name}
+                        </Link>
+                      </h3>
                       <p className="text-sm text-gray-500">
                         {item.color_name} - {item.size}
                       </p>
@@ -219,14 +222,13 @@ export default function CartDrawer({ isOpen, onClose }) {
                 </div>
 
                 {selectedItems.size > 0 ? (
-                 
                   <button
-                      onClick={() => {
-                          window.location.href = `/checkout?items=${Array.from(selectedItems).join(',')}`;
-                      }}
-                      className="w-full py-3 text-center rounded-lg bg-blue-500 text-white hover:bg-blue-600"
+                    onClick={() => {
+                      window.location.href = `/checkout?items=${Array.from(selectedItems).join(',')}`;
+                    }}
+                    className="w-full py-3 text-center rounded-lg bg-blue-500 text-white hover:bg-blue-600"
                   >
-                      Thanh toán ({selectedItems.size} sản phẩm)
+                    Thanh toán ({selectedItems.size} sản phẩm)
                   </button>
                 ) : (
                   <button

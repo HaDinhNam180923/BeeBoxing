@@ -201,8 +201,12 @@ const ProductCard = ({ product }) => {
           <p className="text-sm font-medium text-gray-900 whitespace-nowrap">
             {hasDiscount && (
               <span className="text-xs text-gray-500 line-through mr-2">
-                {formatPrice(product.base_price)}
+                {Number(product.base_price).toLocaleString('vi-VN', {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 2
+                })}đ
               </span>
+
             )}
             {formatPrice(discountedPrice)}
           </p>

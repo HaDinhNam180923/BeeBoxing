@@ -8,6 +8,7 @@ use App\Http\Controllers\API\CartController;
 use App\Http\Controllers\API\AddressController;
 use App\Http\Controllers\API\OrderController;
 use App\Http\Controllers\Admin\VoucherController;
+use App\Http\Controllers\API\ProductController;
 use Illuminate\Http\Request;
 use App\Models\Order;
 use Illuminate\Support\Facades\Auth;
@@ -112,6 +113,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ]);
     })->name('payment.failed');
 
+    Route::get('/api/user/recommendations', [ProductController::class, 'getUserBasedRecommendations']);
     // Order routes
     Route::post('/api/orders', [OrderController::class, 'placeOrder']);
     Route::get('/api/orders', [OrderController::class, 'getOrderHistory']);

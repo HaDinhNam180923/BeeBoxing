@@ -89,6 +89,13 @@ const CollectionDetail = ({ auth, slug }) => {
     <Layout title={collection.name}>
       <div className="max-w-7xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
         <div className="mb-10">
+          {collection.image_url && (
+            <img 
+              src={collection.image_url} 
+              alt={collection.name} 
+              className="w-full h-64 mx-auto mb-6 rounded-lg object-cover"
+            />
+          )}
           <h1 className="text-3xl font-bold text-gray-900 mb-4">{collection.name}</h1>
           {collection.description && (
             <p className="text-gray-600 max-w-3xl">{collection.description}</p>

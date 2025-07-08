@@ -15,6 +15,9 @@ use App\Http\Controllers\Admin\SalesReportController;
 Route::get('/products/recently-viewed', [ProductController::class, 'getRecentlyViewedProducts']);
 // Route để lấy tất cả màu sắc
 Route::get('/product-colors', [ProductController::class, 'getProductColors']);
+// Route để lấy sản phẩm bán chạy và nhiều lượt xem
+Route::get('/products/top-selling', [ProductController::class, 'getTopSellingProducts']);
+Route::get('/products/most-viewed', [ProductController::class, 'getMostViewedProducts']);
 // Slide routes - public endpoints
 Route::get('/slides', [SlideController::class, 'getSlides']);
 Route::get('/slides/{id}', [SlideController::class, 'show']);
